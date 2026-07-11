@@ -1,0 +1,114 @@
+name: Release Pipeline
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  verify-tag:
+    name: Verify Tag Integrity
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify Tag is on main Branch
+        run: |
+          git branch -r --contains ${{ github.ref_name }} | grep -E "origin/main" || {
+            echo "Error: Tag must be pushed from the main branch."
+            exit 1;
+          }
+
+      - name: Extract Maven Version
+        id: maven_version
+        run: |
+          VERSION=$(grep -oE "<version>[0-9]+\.[0-9]+\.[0-9]+(-SNAPSHOT)?</version>" xyo-sdk/pom.xml | head -1 | grep -oE "[0-9]+\.[0-9]+\.[0-9]+")
+          echo "Maven version is $VERSION"
+          echo "val=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Compare Maven Version to Git Tag
+        run: |
+          TAG_VER=${{ github.ref_name }}
+          TAG_VER=${TAG_VER#v} # Strip leading 'v'
+          MAVEN_VER=${{ steps.maven_version.outputs.val }}
+          if [ "$TAG_VER" != "$MAVEN_VER" ]; then
+            echo "Error: Git tag ($TAG_VER) does not match pom.xml version ($MAVEN_VER)"
+            exit 1
+          fi
+
+  publish-release:
+    name: Publish Release & Artifacts
+    needs: verify-tag
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Build Library
+        run: mvn -B clean package --file xyo-sdk/pom.xml
+
+      - name: Build Archive
+        run: |
+          git archive --format=tar.gz --prefix=xyo-sdk-java-${{ github.ref_name }}/ -o xyo-sdk-java-${{ github.ref_name }}.tar.gz HEAD
+
+      - name: Generate Checksums
+        run: sha256sum xyo-sdk-java-${{ github.ref_name }}.tar.gz > xyo-sdk-java-${{ github.ref_name }}.tar.gz.sha256
+
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          format: 'spdx-json'
+          output-file: 'xyo-sdk-java-${{ github.ref_name }}.spdx.json'
+
+      - name: Generate Artifact Attestation
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: 'xyo-sdk-java-${{ github.ref_name }}.tar.gz'
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            xyo-sdk-java-${{ github.ref_name }}.tar.gz
+            xyo-sdk-java-${{ github.ref_name }}.tar.gz.sha256
+            xyo-sdk-java-${{ github.ref_name }}.spdx.json
+            xyo-sdk/target/*.jar
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+
+  verify-example:
+    name: Verify Package in Example App
+    needs: publish-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'maven'
+
+      - name: Install SDK to local Maven Repo
+        run: mvn -B install --file xyo-sdk/pom.xml
+
+      - name: Build Example App
+        run: mvn -B clean package --file example/pom.xml
+
+      - name: Run Example Application
+        run: mvn -B exec:java -Dexec.mainClass="com.xyo.example.Main" --file example/pom.xml
