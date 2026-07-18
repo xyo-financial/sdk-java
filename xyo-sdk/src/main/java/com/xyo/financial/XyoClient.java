@@ -154,11 +154,8 @@ public class XyoClient {
             throw new XyoException(ErrorCategory.VALIDATION, "id must not be null or empty");
         }
         try {
-            Map<String, String> body = new HashMap<>();
-            body.put("id", id);
-            String jsonBody = OBJECT_MAPPER.writeValueAsString(body);
-
             // non-standard: upstream requires POST for status
+            String jsonBody = OBJECT_MAPPER.writeValueAsString(Collections.singletonMap("id", id));
             HttpResponse response = post("/v1/enrich/bulk/status", jsonBody);
             Map<String, EnrichmentCollectionStatus> result = OBJECT_MAPPER.readValue(
                     response.getBody(),

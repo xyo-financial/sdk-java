@@ -39,7 +39,7 @@ public class EnrichmentResponse {
             @JsonProperty("address") @Nullable String address) {
         this.merchant = merchant;
         this.description = description;
-        this.categories = categories != null ? List.copyOf(categories) : Collections.emptyList();
+        this.categories = categories != null ? categories.stream().filter(Objects::nonNull).toList() : Collections.emptyList();
         this.logo = logo;
         this.location = location;
         this.address = address;

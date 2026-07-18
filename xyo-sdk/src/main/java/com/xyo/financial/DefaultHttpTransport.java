@@ -99,6 +99,10 @@ public class DefaultHttpTransport implements HttpTransport {
         @Override
         public int read() throws IOException {
             if (bytesRead >= maxBytes) {
+                int b = in.read();
+                if (b == -1) {
+                    return -1;
+                }
                 throw new IOException("Response body exceeded maximum allowed size of " + maxBytes + " bytes");
             }
             int b = in.read();
@@ -110,10 +114,14 @@ public class DefaultHttpTransport implements HttpTransport {
 
         @Override
         public int read(byte[] b, int off, int len) throws IOException {
-            long remaining = maxBytes - bytesRead;
-            if (remaining <= 0) {
+            if (bytesRead >= maxBytes) {
+                int check = in.read();
+                if (check == -1) {
+                    return -1;
+                }
                 throw new IOException("Response body exceeded maximum allowed size of " + maxBytes + " bytes");
             }
+            long remaining = maxBytes - bytesRead;
             int maxToRead = (int) Math.min(len, remaining + 1);
             int read = in.read(b, off, maxToRead);
             if (read != -1) {
