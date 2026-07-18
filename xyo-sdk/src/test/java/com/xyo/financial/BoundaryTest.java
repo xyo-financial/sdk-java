@@ -45,7 +45,10 @@ public class BoundaryTest {
         
         XyoClient client = new XyoClient(config);
         
-        // This should not throw an exception!
-        client.enrichTransactionCollectionStatus("batch-123");
+        // It should successfully read the 5 bytes (transport success) and then fail on JSON parsing
+        XyoException exception = assertThrows(XyoException.class, () -> {
+            client.enrichTransactionCollectionStatus("batch-123");
+        });
+        assertEquals(ErrorCategory.PARSING, exception.getCategory());
     }
 }
