@@ -13,6 +13,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -23,6 +24,9 @@ class XyoClientTest {
     private XyoClient client;
     private HttpServer testServer;
     private int testServerPort;
+    
+    // Captures assertions or other failures thrown inside the HttpServer worker threads
+    private final AtomicReference<Throwable> handlerException = new AtomicReference<>();
 
     // A simple manual mock for HttpTransport to avoid adding Mockito dependency
     static class MockHttpTransport implements HttpTransport {
@@ -41,6 +45,7 @@ class XyoClientTest {
 
     @BeforeEach
     void setUp() {
+        handlerException.set(null);
         config = new ClientConfig("test-api-key");
         mockTransport = new MockHttpTransport();
         config.setHttpTransport(mockTransport);
@@ -48,15 +53,28 @@ class XyoClientTest {
     }
 
     @AfterEach
-    void tearDown() {
+    void tearDown() throws Throwable {
         if (testServer != null) {
             testServer.stop(0);
+        }
+        
+        // Propagate assertion failures thrown on background HttpServer handler threads back to JUnit test runner thread
+        Throwable backgroundException = handlerException.get();
+        if (backgroundException != null) {
+            throw backgroundException;
         }
     }
 
     private void startTestServer(HttpHandler handler) throws IOException {
         testServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
-        testServer.createContext("/", handler);
+        testServer.createContext("/", exchange -> {
+            try {
+                handler.handle(exchange);
+            } catch (Throwable t) {
+                handlerException.set(t);
+                exchange.sendResponseHeaders(500, -1);
+            }
+        });
         testServer.start();
         testServerPort = testServer.getAddress().getPort();
     }
@@ -106,6 +124,21 @@ class XyoClientTest {
     }
 
     @Test
+    void testEnrichTransaction_ServerError500() {
+        mockTransport.responseToReturn = new HttpResponse(500, "Internal Server Error");
+
+        EnrichmentRequest request = new EnrichmentRequest("Costa", "GB");
+
+        XyoException exception = assertThrows(XyoException.class, () -> {
+            client.enrichTransaction(request);
+        });
+
+        assertEquals(ErrorCategory.HTTP, exception.getCategory());
+        assertEquals(500, exception.getHttpStatusCode());
+        assertEquals("Internal Server Error", exception.getResponseBody());
+    }
+
+    @Test
     void testEnrichTransactionCollection_Success() {
         String jsonResponse = "{\n" +
                 "  \"id\": \"batch-123\",\n" +
@@ -134,6 +167,7 @@ class XyoClientTest {
     }
 
     @Test
+    @SuppressWarnings("deprecation")
     void testClientConfigValidation() {
         assertThrows(XyoException.class, () -> new XyoClient(null));
         assertThrows(XyoException.class, () -> new XyoClient(new ClientConfig(null)));
@@ -145,6 +179,28 @@ class XyoClientTest {
     }
 
     @Test
+    void testClientConfigBuilder() {
+        ClientConfig buildConfig = new ClientConfig.Builder("key-from-builder")
+                .apiBaseUrl("https://api2.xyo.financial")
+                .connectTimeoutMs(8000)
+                .requestTimeoutMs(45000)
+                .maxResponseBytes(500000)
+                .allowInsecureHttp(true)
+                .build();
+
+        assertEquals("key-from-builder", buildConfig.getApiKey());
+        assertEquals("https://api2.xyo.financial", buildConfig.getApiBaseUrl());
+        assertEquals(8000, buildConfig.getConnectTimeoutMs());
+        assertEquals(45000, buildConfig.getRequestTimeoutMs());
+        assertEquals(500000, buildConfig.getMaxResponseBytes());
+        assertTrue(buildConfig.isAllowInsecureHttp());
+
+        XyoClient clientFromBuilder = new XyoClient(buildConfig);
+        assertNotNull(clientFromBuilder);
+    }
+
+    @Test
+    @SuppressWarnings("deprecation")
     void testClientConfigDoesNotMutate() {
         ClientConfig mutableConfig = new ClientConfig("key");
         mutableConfig.setApiBaseUrl("https://api.xyo.financial///");
@@ -156,6 +212,7 @@ class XyoClientTest {
     }
 
     @Test
+    @SuppressWarnings("deprecation")
     void testEnforceSecureHttp() {
         ClientConfig insecureConf = new ClientConfig("key");
         insecureConf.setApiBaseUrl("http://api.xyo.financial");
@@ -203,6 +260,16 @@ class XyoClientTest {
     }
 
     @Test
+    void testEnrichmentCollectionStatus_NullValueThrows() {
+        // Mock response returning JSON null for status
+        mockTransport.responseToReturn = new HttpResponse(200, "{\"status\": null}");
+
+        assertThrows(XyoException.class, () -> {
+            client.enrichTransactionCollectionStatus("batch-123");
+        });
+    }
+
+    @Test
     void testDefaultHttpTransport_RealHttpServer() throws IOException {
         String mockResponseBody = "{\"status\": \"READY\"}";
         startTestServer(exchange -> {
@@ -217,9 +284,10 @@ class XyoClientTest {
             }
         });
 
-        ClientConfig realConfig = new ClientConfig("integration-key");
-        realConfig.setApiBaseUrl("http://127.0.0.1:" + testServerPort);
-        realConfig.setAllowInsecureHttp(true); // Need true since server is http localhost
+        ClientConfig realConfig = new ClientConfig.Builder("integration-key")
+                .apiBaseUrl("http://127.0.0.1:" + testServerPort)
+                .allowInsecureHttp(true) // Need true since server is http localhost
+                .build();
 
         XyoClient realClient = new XyoClient(realConfig);
         EnrichmentCollectionStatus status = realClient.enrichTransactionCollectionStatus("batch-123");
@@ -237,10 +305,11 @@ class XyoClientTest {
             }
         });
 
-        ClientConfig limitConfig = new ClientConfig("key");
-        limitConfig.setApiBaseUrl("http://127.0.0.1:" + testServerPort);
-        limitConfig.setAllowInsecureHttp(true);
-        limitConfig.setMaxResponseBytes(10); // set very low limit
+        ClientConfig limitConfig = new ClientConfig.Builder("key")
+                .apiBaseUrl("http://127.0.0.1:" + testServerPort)
+                .allowInsecureHttp(true)
+                .maxResponseBytes(10) // set very low limit
+                .build();
 
         XyoClient limitClient = new XyoClient(limitConfig);
 
@@ -263,9 +332,10 @@ class XyoClientTest {
             }
         });
 
-        ClientConfig errConfig = new ClientConfig("key");
-        errConfig.setApiBaseUrl("http://127.0.0.1:" + testServerPort);
-        errConfig.setAllowInsecureHttp(true);
+        ClientConfig errConfig = new ClientConfig.Builder("key")
+                .apiBaseUrl("http://127.0.0.1:" + testServerPort)
+                .allowInsecureHttp(true)
+                .build();
 
         XyoClient errClient = new XyoClient(errConfig);
 

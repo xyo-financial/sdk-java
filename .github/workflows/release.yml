@@ -105,6 +105,10 @@ jobs:
           cache: 'maven'
 
       - name: Install SDK to local Maven Repo
+        # Note: We install to the local Maven repository to verify that the compilation, packaging,
+        # and installation of the Maven package works, and that the example application compiles
+        # and runs against it successfully. Testing against the published artifact on Maven Central
+        # directly in this pipeline is not feasible due to asynchronous staging release workflows.
         run: mvn -B install --file xyo-sdk/pom.xml
 
       - name: Build Example App

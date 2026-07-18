@@ -11,23 +11,31 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
+/**
+ * Standard implementation of {@link HttpTransport} wrapping {@link HttpClient}.
+ */
 public class DefaultHttpTransport implements HttpTransport {
 
     private static final HttpClient DEFAULT_HTTP_CLIENT = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofMillis(5000))
+            .connectTimeout(Duration.ofMillis(ClientConfig.DEFAULT_CONNECT_TIMEOUT_MS))
             .build();
 
     private final HttpClient client;
     private final long requestTimeoutMs;
     private final long maxResponseBytes;
 
+    /**
+     * Constructs a new DefaultHttpTransport with the given {@link ClientConfig}.
+     * 
+     * @param config the configuration properties
+     */
     public DefaultHttpTransport(ClientConfig config) {
         this.requestTimeoutMs = config.getRequestTimeoutMs();
         this.maxResponseBytes = config.getMaxResponseBytes();
 
         if (config.getHttpClient() != null) {
             this.client = config.getHttpClient();
-        } else if (config.getConnectTimeoutMs() == 5000) {
+        } else if (config.getConnectTimeoutMs() == ClientConfig.DEFAULT_CONNECT_TIMEOUT_MS) {
             this.client = DEFAULT_HTTP_CLIENT;
         } else {
             this.client = HttpClient.newBuilder()
@@ -74,6 +82,10 @@ public class DefaultHttpTransport implements HttpTransport {
         }
     }
 
+    /**
+     * Bounded stream reader wrapping an {@link InputStream} that prevents reading 
+     * more than the allowed limit to protect against OOM situations.
+     */
     private static class BoundedInputStream extends InputStream {
         private final InputStream in;
         private final long maxBytes;
@@ -86,6 +98,13 @@ public class DefaultHttpTransport implements HttpTransport {
 
         @Override
         public int read() throws IOException {
+            if (bytesRead >= maxBytes) {
+                int b = in.read();
+                if (b == -1) {
+                    return -1;
+                }
+                throw new IOException("Response body exceeded maximum allowed size of " + maxBytes + " bytes");
+            }
             int b = in.read();
             if (b != -1) {
                 incrementBytes(1);
@@ -95,7 +114,16 @@ public class DefaultHttpTransport implements HttpTransport {
 
         @Override
         public int read(byte[] b, int off, int len) throws IOException {
-            int read = in.read(b, off, len);
+            if (bytesRead >= maxBytes) {
+                int check = in.read();
+                if (check == -1) {
+                    return -1;
+                }
+                throw new IOException("Response body exceeded maximum allowed size of " + maxBytes + " bytes");
+            }
+            long remaining = maxBytes - bytesRead;
+            int maxToRead = (int) Math.min(len, remaining + 1);
+            int read = in.read(b, off, maxToRead);
             if (read != -1) {
                 incrementBytes(read);
             }

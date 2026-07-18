@@ -69,7 +69,7 @@ cd xyo-sdk-java
 mvn clean install --file xyo-sdk/pom.xml
 ```
 
-Then, add the dependency to your project's `pom.xml` (replace `1.0.0` with the actual release version you built, or `1.0-SNAPSHOT` if building directly from the SNAPSHOT source):
+Then, add the dependency to your project's `pom.xml` (replace `1.0.0` with the actual release version you built, or `1.0.0-SNAPSHOT` if building directly from the SNAPSHOT source):
 ```xml
 <dependency>
     <groupId>com.xyo.financial</groupId>
