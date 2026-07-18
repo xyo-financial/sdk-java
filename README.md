@@ -31,7 +31,12 @@ import java.util.List;
 
 public class App {
     public static void main(String[] args) {
-        ClientConfig config = new ClientConfig("YourAPIKeyFromXYO.FinancialDashboard");
+        // Instantiate the config using the builder
+        ClientConfig config = new ClientConfig.Builder("YourAPIKeyFromXYO.FinancialDashboard")
+                .connectTimeoutMs(5000)
+                .requestTimeoutMs(30000)
+                .build();
+                
         XyoClient client = new XyoClient(config);
 
         EnrichmentResponse result = client.enrichTransaction(new EnrichmentRequest("COSTA PICKUP", "GB"));
@@ -48,7 +53,7 @@ public class App {
 }
 ```
 
-Requests that fail at the transport layer, return a non-200 status, or contain an invalid response throw `XyoException`. `location` and `address` may be null because the service may return JSON `null`.
+Requests that fail at the transport layer, return a non-2xx status, or contain an invalid response throw `XyoException`. `location` and `address` may be null because the service may return JSON `null`. When an HTTP error occurs, you can inspect the response body via `exception.getResponseBody()`.
 
 ## Installation & Integration
 
@@ -64,12 +69,12 @@ cd xyo-sdk-java
 mvn clean install --file xyo-sdk/pom.xml
 ```
 
-Then, add the dependency to your project's `pom.xml`:
+Then, add the dependency to your project's `pom.xml` (replace `1.0.0` with the actual release version you built, or `1.0-SNAPSHOT` if building directly from the SNAPSHOT source):
 ```xml
 <dependency>
     <groupId>com.xyo.financial</groupId>
     <artifactId>xyo-sdk</artifactId>
-    <version>1.0-SNAPSHOT</version>
+    <version>1.0.0</version>
 </dependency>
 ```
 
@@ -83,7 +88,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.xyo.financial:xyo-sdk:1.0-SNAPSHOT'
+    implementation 'com.xyo.financial:xyo-sdk:1.0.0'
 }
 ```
 
