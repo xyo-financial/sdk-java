@@ -66,12 +66,12 @@ cd xyo-sdk-java
 mvn clean install --file xyo-sdk/pom.xml
 ```
 
-Then, add the dependency to your project's `pom.xml` (replace `1.0.0` with the actual release version you built, or `1.0.0-SNAPSHOT` if building directly from the SNAPSHOT source):
+Then, add the dependency to your project's `pom.xml` (replace `1.0.1` with the actual release version you built, or `1.0.1-SNAPSHOT` if building directly from the SNAPSHOT source):
 ```xml
 <dependency>
     <groupId>com.xyo.financial</groupId>
     <artifactId>xyo-sdk</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
 </dependency>
 ```
 
@@ -85,10 +85,11 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.xyo.financial:xyo-sdk:1.0.0'
+    implementation 'com.xyo.financial:xyo-sdk:1.0.1'
 }
 ```
 
 ## License
+This project is licensed under the BSD 3-Clause License - see the [LICENSE](LICENSE) file for details.
 
-Copyright © 2025 Syniol Limited. All rights reserved. See [LICENSE](LICENSE).
+Copyright &copy; 2025 Syniol Limited.
