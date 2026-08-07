@@ -5,7 +5,7 @@
 
   <groupId>com.xyo.financial</groupId>
   <artifactId>xyo-sdk</artifactId>
-  <version>1.0.1-SNAPSHOT</version>
+  <version>1.0.2-SNAPSHOT</version>
 
   <name>xyo-sdk</name>
   <url>https://xyo.financial</url>
