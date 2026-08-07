@@ -1,5 +1,5 @@
 # XYO.Financial SDK for Java
-![workflow](https://github.com/syniol/xyo-sdk-java/actions/workflows/ci.yml/badge.svg?branch=main)    ![workflow](https://github.com/syniol/xyo-sdk-java/actions/workflows/release.yml/badge.svg)
+![workflow](https://github.com/xyo-financial/sdk-java/actions/workflows/ci.yml/badge.svg?branch=main)    ![workflow](https://github.com/xyo-financial/sdk-java/actions/workflows/release.yml/badge.svg)
 
 <p align="center">
     <a href="https://xyo.financial" target="blank"><img width="420" alt="Java Mascot for XYO.Financial" src="docs/mascot.png" /></a>
@@ -61,8 +61,8 @@ The Java SDK can be integrated into your project using Maven or Gradle.
 Since this package is currently distributed via source, you must first build and install it into your local Maven cache:
 
 ```sh
-git clone https://github.com/syniol/xyo-sdk-java.git
-cd xyo-sdk-java
+git clone https://github.com/xyo-financial/sdk-java.git
+cd sdk-java
 mvn clean install --file xyo-sdk/pom.xml
 ```
 
