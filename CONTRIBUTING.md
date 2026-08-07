@@ -5,7 +5,7 @@ First of all, thank you for taking the time to contribute!
 ## Development Setup
 
 1. Make sure you have Java 17 and Maven installed.
-2. Clone the repository: `git clone https://github.com/syniol/xyo-sdk-java.git`
+2. Clone the repository: `git clone https://github.com/xyo-financial/sdk-java.git`
 3. Run `mvn clean install` to build the SDK and run all tests.
 
 ## Coding Standards

@@ -1,5 +1,5 @@
 # XYO.Financial SDK for Java
-![workflow](https://github.com/syniol/xyo-sdk-java/actions/workflows/ci.yml/badge.svg?branch=main)    ![workflow](https://github.com/syniol/xyo-sdk-java/actions/workflows/release.yml/badge.svg)
+![workflow](https://github.com/xyo-financial/sdk-java/actions/workflows/ci.yml/badge.svg?branch=main)    ![workflow](https://github.com/xyo-financial/sdk-java/actions/workflows/release.yml/badge.svg)
 
 <p align="center">
     <a href="https://xyo.financial" target="blank"><img width="420" alt="Java Mascot for XYO.Financial" src="docs/mascot.png" /></a>
@@ -61,17 +61,17 @@ The Java SDK can be integrated into your project using Maven or Gradle.
 Since this package is currently distributed via source, you must first build and install it into your local Maven cache:
 
 ```sh
-git clone https://github.com/syniol/xyo-sdk-java.git
-cd xyo-sdk-java
+git clone https://github.com/xyo-financial/sdk-java.git
+cd sdk-java
 mvn clean install --file xyo-sdk/pom.xml
 ```
 
-Then, add the dependency to your project's `pom.xml` (replace `1.0.1` with the actual release version you built, or `1.0.1-SNAPSHOT` if building directly from the SNAPSHOT source):
+Then, add the dependency to your project's `pom.xml` (replace `1.0.2` with the actual release version you built, or `1.0.2-SNAPSHOT` if building directly from the SNAPSHOT source):
 ```xml
 <dependency>
     <groupId>com.xyo.financial</groupId>
     <artifactId>xyo-sdk</artifactId>
-    <version>1.0.1</version>
+    <version>1.0.2</version>
 </dependency>
 ```
 
@@ -85,7 +85,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.xyo.financial:xyo-sdk:1.0.1'
+    implementation 'com.xyo.financial:xyo-sdk:1.0.2'
 }
 ```
 
