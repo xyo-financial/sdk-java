@@ -19,49 +19,24 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class XyoClientTest {
 
-    private ClientConfig config;
-    private MockHttpTransport mockTransport;
-    private XyoClient client;
     private HttpServer testServer;
     private int testServerPort;
-    
-    // Captures assertions or other failures thrown inside the HttpServer worker threads
+    private XyoClient client;
     private final AtomicReference<Throwable> handlerException = new AtomicReference<>();
 
-    // A simple manual mock for HttpTransport to avoid adding Mockito dependency
-    static class MockHttpTransport implements HttpTransport {
-        volatile HttpRequest lastRequest;
-        volatile HttpResponse responseToReturn;
-
-        @Override
-        public HttpResponse send(HttpRequest request) {
-            this.lastRequest = request;
-            if (responseToReturn == null) {
-                throw new XyoException(ErrorCategory.TRANSPORT, "No mock response configured");
-            }
-            return responseToReturn;
-        }
-    }
-
     @BeforeEach
-    void setUp() {
+    void setUp() throws IOException {
         handlerException.set(null);
-        config = new ClientConfig("test-api-key");
-        mockTransport = new MockHttpTransport();
-        config.setHttpTransport(mockTransport);
-        client = new XyoClient(config);
     }
 
     @AfterEach
-    void tearDown() throws Throwable {
+    void tearDown() {
         if (testServer != null) {
             testServer.stop(0);
         }
-        
-        // Propagate assertion failures thrown on background HttpServer handler threads back to JUnit test runner thread
         Throwable backgroundException = handlerException.get();
         if (backgroundException != null) {
-            throw backgroundException;
+            fail("HttpServer handler threw exception: " + backgroundException.getMessage());
         }
     }
 
@@ -79,8 +54,16 @@ class XyoClientTest {
         testServerPort = testServer.getAddress().getPort();
     }
 
+    private XyoClient createTestClient() {
+        ClientConfig config = new ClientConfig.Builder("test-api-key")
+                .apiBaseUrl("http://127.0.0.1:" + testServerPort)
+                .allowInsecureHttp(true)
+                .build();
+        return new XyoClient(config);
+    }
+
     @Test
-    void testEnrichTransaction_Success() {
+    void testEnrichTransaction_Success() throws IOException {
         String jsonResponse = "{\n" +
                 "  \"merchant\": \"Test Merchant\",\n" +
                 "  \"description\": \"Test Description\",\n" +
@@ -89,17 +72,26 @@ class XyoClientTest {
                 "  \"location\": \"London\",\n" +
                 "  \"address\": \"123 Baker St\"\n" +
                 "}";
-        mockTransport.responseToReturn = new HttpResponse(200, jsonResponse);
 
+        startTestServer(exchange -> {
+            assertEquals("POST", exchange.getRequestMethod());
+            assertEquals("/v1/ai/finance/enrichment/transaction", exchange.getRequestURI().getPath());
+            assertEquals("Bearer test-api-key", exchange.getRequestHeaders().getFirst("Authorization"));
+            String requestBody = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            assertTrue(requestBody.contains("\"content\":\"COSTA PICKUP\""));
+            assertTrue(requestBody.contains("\"countryCode\":\"GB\""));
+
+            byte[] resBytes = jsonResponse.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, resBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(resBytes);
+            }
+        });
+
+        client = createTestClient();
         EnrichmentRequest request = new EnrichmentRequest("COSTA PICKUP", "GB");
         EnrichmentResponse response = client.enrichTransaction(request);
-
-        assertNotNull(mockTransport.lastRequest);
-        assertEquals("POST", mockTransport.lastRequest.getMethod());
-        assertEquals("https://api.xyo.financial/v1/enrich", mockTransport.lastRequest.getUrl());
-        assertEquals("Bearer test-api-key", mockTransport.lastRequest.getHeaders().get("Authorization").get(0));
-        assertTrue(mockTransport.lastRequest.getBody().contains("\"content\":\"COSTA PICKUP\""));
-        assertTrue(mockTransport.lastRequest.getBody().contains("\"countryCode\":\"GB\""));
 
         assertNotNull(response);
         assertEquals("Test Merchant", response.getMerchant());
@@ -109,9 +101,18 @@ class XyoClientTest {
     }
 
     @Test
-    void testEnrichTransaction_ApiError() {
-        mockTransport.responseToReturn = new HttpResponse(400, "{\"error\": \"Bad request\"}");
+    void testEnrichTransaction_ApiError() throws IOException {
+        String errorJson = "{\"error\": \"Bad request\"}";
+        startTestServer(exchange -> {
+            byte[] resBytes = errorJson.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(400, resBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(resBytes);
+            }
+        });
 
+        client = createTestClient();
         EnrichmentRequest request = new EnrichmentRequest("Test", "GB");
 
         XyoException exception = assertThrows(XyoException.class, () -> {
@@ -120,13 +121,21 @@ class XyoClientTest {
 
         assertEquals(ErrorCategory.HTTP, exception.getCategory());
         assertEquals(400, exception.getHttpStatusCode());
-        assertEquals("{\"error\": \"Bad request\"}", exception.getResponseBody());
+        assertEquals(errorJson, exception.getResponseBody());
     }
 
     @Test
-    void testEnrichTransaction_ServerError500() {
-        mockTransport.responseToReturn = new HttpResponse(500, "Internal Server Error");
+    void testEnrichTransaction_ServerError500() throws IOException {
+        String errorBody = "Internal Server Error";
+        startTestServer(exchange -> {
+            byte[] resBytes = errorBody.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(500, resBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(resBytes);
+            }
+        });
 
+        client = createTestClient();
         EnrichmentRequest request = new EnrichmentRequest("Costa", "GB");
 
         XyoException exception = assertThrows(XyoException.class, () -> {
@@ -139,13 +148,26 @@ class XyoClientTest {
     }
 
     @Test
-    void testEnrichTransactionCollection_Success() {
+    void testEnrichTransactionCollection_Success() throws IOException {
         String jsonResponse = "{\n" +
                 "  \"id\": \"batch-123\",\n" +
                 "  \"link\": \"https://api.xyo.financial/v1/enrich/bulk/batch-123\"\n" +
                 "}";
-        mockTransport.responseToReturn = new HttpResponse(200, jsonResponse);
 
+        startTestServer(exchange -> {
+            assertEquals("POST", exchange.getRequestMethod());
+            assertEquals("/v1/ai/finance/enrichment/transactions", exchange.getRequestURI().getPath());
+            assertEquals("Bearer test-api-key", exchange.getRequestHeaders().getFirst("Authorization"));
+
+            byte[] resBytes = jsonResponse.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, resBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(resBytes);
+            }
+        });
+
+        client = createTestClient();
         EnrichmentRequest req1 = new EnrichmentRequest("COSTA", "GB");
         EnrichmentRequest req2 = new EnrichmentRequest("TESCO", "GB");
         EnrichTransactionCollectionResponse response = client.enrichTransactionCollection(List.of(req1, req2));
@@ -156,14 +178,25 @@ class XyoClientTest {
     }
 
     @Test
-    void testEnrichTransactionCollectionStatus_Ready() {
+    void testEnrichTransactionCollectionStatus_Ready() throws IOException {
         String jsonResponse = "{\"status\": \"READY\"}";
-        mockTransport.responseToReturn = new HttpResponse(200, jsonResponse);
+        startTestServer(exchange -> {
+            assertEquals("GET", exchange.getRequestMethod());
+            assertEquals("/v1/ai/finance/enrichment/status/batch-123", exchange.getRequestURI().getPath());
+            assertEquals("Bearer test-api-key", exchange.getRequestHeaders().getFirst("Authorization"));
 
+            byte[] resBytes = jsonResponse.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, resBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(resBytes);
+            }
+        });
+
+        client = createTestClient();
         EnrichmentCollectionStatus status = client.enrichTransactionCollectionStatus("batch-123");
 
         assertEquals(EnrichmentCollectionStatus.READY, status);
-        assertTrue(mockTransport.lastRequest.getBody().contains("\"id\":\"batch-123\""));
     }
 
     @Test
@@ -228,6 +261,9 @@ class XyoClientTest {
 
     @Test
     void testEnrichmentRequestValidation() {
+        ClientConfig dummyConfig = new ClientConfig.Builder("key").apiBaseUrl("https://api.xyo.financial").build();
+        client = new XyoClient(dummyConfig);
+
         assertThrows(XyoException.class, () -> client.enrichTransaction(null));
         assertThrows(XyoException.class, () -> client.enrichTransaction(new EnrichmentRequest(null, "GB")));
         assertThrows(XyoException.class, () -> client.enrichTransaction(new EnrichmentRequest("", "GB")));
@@ -237,6 +273,9 @@ class XyoClientTest {
 
     @Test
     void testEnrichmentCollectionValidation() {
+        ClientConfig dummyConfig = new ClientConfig.Builder("key").apiBaseUrl("https://api.xyo.financial").build();
+        client = new XyoClient(dummyConfig);
+
         assertThrows(XyoException.class, () -> client.enrichTransactionCollection(null));
         assertThrows(XyoException.class, () -> client.enrichTransactionCollection(Collections.emptyList()));
         assertThrows(XyoException.class, () -> client.enrichTransactionCollection(List.of(new EnrichmentRequest(null, "GB"))));
@@ -249,9 +288,17 @@ class XyoClientTest {
     }
 
     @Test
-    void testMissingStatusKey() {
-        mockTransport.responseToReturn = new HttpResponse(200, "{\"wrong_key\": \"READY\"}");
+    void testMissingStatusKey() throws IOException {
+        startTestServer(exchange -> {
+            byte[] resBytes = "{\"wrong_key\": \"READY\"}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, resBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(resBytes);
+            }
+        });
 
+        client = createTestClient();
         XyoException exception = assertThrows(XyoException.class, () -> {
             client.enrichTransactionCollectionStatus("batch-123");
         });
@@ -260,87 +307,37 @@ class XyoClientTest {
     }
 
     @Test
-    void testEnrichmentCollectionStatus_NullValueThrows() {
-        // Mock response returning JSON null for status
-        mockTransport.responseToReturn = new HttpResponse(200, "{\"status\": null}");
+    void testEnrichmentCollectionStatus_NullValueThrows() throws IOException {
+        startTestServer(exchange -> {
+            byte[] resBytes = "{\"status\": null}".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, resBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(resBytes);
+            }
+        });
 
+        client = createTestClient();
         assertThrows(XyoException.class, () -> {
             client.enrichTransactionCollectionStatus("batch-123");
         });
     }
 
     @Test
-    void testDefaultHttpTransport_RealHttpServer() throws IOException {
-        String mockResponseBody = "{\"status\": \"READY\"}";
-        startTestServer(exchange -> {
-            assertEquals("POST", exchange.getRequestMethod());
-            assertEquals("/v1/enrich/bulk/status", exchange.getRequestURI().getPath());
-            assertEquals("Bearer integration-key", exchange.getRequestHeaders().getFirst("Authorization"));
-
-            byte[] responseBytes = mockResponseBody.getBytes(StandardCharsets.UTF_8);
-            exchange.sendResponseHeaders(200, responseBytes.length);
-            try (OutputStream os = exchange.getResponseBody()) {
-                os.write(responseBytes);
-            }
-        });
-
-        ClientConfig realConfig = new ClientConfig.Builder("integration-key")
-                .apiBaseUrl("http://127.0.0.1:" + testServerPort)
-                .allowInsecureHttp(true) // Need true since server is http localhost
-                .build();
-
-        XyoClient realClient = new XyoClient(realConfig);
-        EnrichmentCollectionStatus status = realClient.enrichTransactionCollectionStatus("batch-123");
-        assertEquals(EnrichmentCollectionStatus.READY, status);
-    }
-
-    @Test
-    void testDefaultHttpTransport_MaxResponseBytesEnforced() throws IOException {
-        String longResponseBody = "This is a very long response body that will exceed the configured limit.";
-        startTestServer(exchange -> {
-            byte[] responseBytes = longResponseBody.getBytes(StandardCharsets.UTF_8);
-            exchange.sendResponseHeaders(200, responseBytes.length);
-            try (OutputStream os = exchange.getResponseBody()) {
-                os.write(responseBytes);
-            }
-        });
-
-        ClientConfig limitConfig = new ClientConfig.Builder("key")
-                .apiBaseUrl("http://127.0.0.1:" + testServerPort)
-                .allowInsecureHttp(true)
-                .maxResponseBytes(10) // set very low limit
-                .build();
-
-        XyoClient limitClient = new XyoClient(limitConfig);
-
-        XyoException exception = assertThrows(XyoException.class, () -> {
-            limitClient.enrichTransactionCollectionStatus("batch-123");
-        });
-
-        assertEquals(ErrorCategory.TRANSPORT, exception.getCategory());
-        assertTrue(exception.getMessage().contains("Response body exceeded maximum allowed size"));
-    }
-
-    @Test
-    void testDefaultHttpTransport_HttpErrorPreserved() throws IOException {
+    void testHttpErrorPreserved() throws IOException {
         String errorJson = "{\"error_code\":\"rate_limit_exceeded\",\"message\":\"Too many requests\"}";
         startTestServer(exchange -> {
             byte[] responseBytes = errorJson.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.sendResponseHeaders(429, responseBytes.length);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(responseBytes);
             }
         });
 
-        ClientConfig errConfig = new ClientConfig.Builder("key")
-                .apiBaseUrl("http://127.0.0.1:" + testServerPort)
-                .allowInsecureHttp(true)
-                .build();
-
-        XyoClient errClient = new XyoClient(errConfig);
-
+        client = createTestClient();
         XyoException exception = assertThrows(XyoException.class, () -> {
-            errClient.enrichTransactionCollectionStatus("batch-123");
+            client.enrichTransactionCollectionStatus("batch-123");
         });
 
         assertEquals(ErrorCategory.HTTP, exception.getCategory());

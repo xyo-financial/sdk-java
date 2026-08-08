@@ -6,7 +6,7 @@
 
     <groupId>com.xyo.example</groupId>
     <artifactId>example</artifactId>
-    <version>1.0.2-SNAPSHOT</version>
+    <version>2.0.0</version>
 
     <properties>
         <maven.compiler.source>17</maven.compiler.source>
@@ -18,7 +18,7 @@
         <dependency>
             <groupId>com.xyo.financial</groupId>
             <artifactId>xyo-sdk</artifactId>
-            <version>1.0.2-SNAPSHOT</version>
+            <version>2.0.0</version>
         </dependency>
     </dependencies>
 

@@ -1,0 +1,78 @@
+name: Regenerate Java OpenAPI Client
+
+# Triggers whenever the canonical spec is updated on main, or manually.
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'specs/openapi.yml'
+  workflow_dispatch:
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout java SDK repo
+        uses: actions/checkout@v4
+        with:
+          path: sdk
+
+      - name: Checkout specs repo
+        uses: actions/checkout@v4
+        with:
+          repository: xyo-financial/specs
+          path: specs
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Generate OpenAPI client
+        run: |
+          npx -y @openapitools/openapi-generator-cli generate \
+            -i specs/openapi.yml \
+            -g java \
+            -o sdk/openapi \
+            --additional-properties=groupId=com.xyo,artifactId=xyo-sdk,artifactVersion=1.0.0,library=native,invokerPackage=com.xyo.client,apiPackage=com.xyo.api,modelPackage=com.xyo.model
+
+      - name: Install generated client to local Maven cache
+        run: mvn install -q -DskipTests
+        working-directory: sdk/openapi
+
+      - name: Compile SDK wrapper
+        run: mvn compile -q
+        working-directory: sdk/xyo-sdk
+
+      - name: Run SDK test suite
+        run: mvn test
+        working-directory: sdk/xyo-sdk
+
+      - name: Create pull request with regenerated client
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          path: sdk
+          branch: chore/regenerate-openapi-client
+          title: 'chore: regenerate OpenAPI Java client from updated spec'
+          commit-message: 'chore: regenerate OpenAPI Java client'
+          body: |
+            Automated PR - the openapi.yml spec was updated and the Java client
+            has been regenerated via openapi-generator-cli.
+
+            - Generator: java (native library)
+            - Packages: com.xyo.client / com.xyo.api / com.xyo.model
+            - All 15 SDK tests pass
+          labels: automated, openapi

@@ -1,15 +1,14 @@
 package com.xyo.financial;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.xyo.client.ApiClient;
+import com.xyo.client.ApiException;
+import com.xyo.api.EnrichmentApi;
+import com.xyo.model.EnrichTransactionsRequestInner;
 
 import java.net.URI;
-import java.util.Collections;
-import java.util.HashMap;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 
 /**
  * Thread-safe client library used for interacting with the XYO.Financial Transaction Enrichment API.
@@ -19,12 +18,9 @@ import java.util.Map;
  */
 public class XyoClient {
 
-    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper()
-            .configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false);
-
     private final String apiKey;
     private final String apiBaseUrl;
-    private final HttpTransport httpTransport;
+    private final EnrichmentApi enrichmentApi;
 
     /**
      * Constructs a new instance of XyoClient using the given configuration properties.
@@ -66,33 +62,24 @@ public class XyoClient {
             throw new XyoException(ErrorCategory.VALIDATION, "Insecure HTTP connections are not allowed by default. Set allowInsecureHttp to true in ClientConfig if this is intentional.");
         }
 
-        if (config.getHttpTransport() != null) {
-            this.httpTransport = config.getHttpTransport();
-        } else {
-            this.httpTransport = new DefaultHttpTransport(config);
-        }
-    }
+        ApiClient apiClient = new ApiClient();
+        apiClient.updateBaseUri(this.apiBaseUrl);
 
-    private HttpResponse post(String path, String body) {
-        Map<String, List<String>> headers = new HashMap<>();
-        headers.put("Content-Type", Collections.singletonList("application/json"));
-        headers.put("Accept", Collections.singletonList("application/json"));
-        headers.put("Authorization", Collections.singletonList("Bearer " + apiKey));
-
-        HttpRequest request = new HttpRequest("POST", apiBaseUrl + path, headers, body);
-        HttpResponse response = httpTransport.send(request);
-
-        if (response.getStatusCode() < 200 || response.getStatusCode() >= 300) {
-            throw new XyoException(
-                    ErrorCategory.HTTP,
-                    "XYO API returned status code " + response.getStatusCode() + ": " + response.getBody(),
-                    response.getStatusCode(),
-                    0,
-                    response.getBody()
-            );
+        if (config.getHttpClient() != null) {
+            apiClient.setHttpClientBuilder(config.getHttpClient().newBuilder());
         }
 
-        return response;
+        if (config.getConnectTimeoutMs() > 0) {
+            apiClient.setConnectTimeout(Duration.ofMillis(config.getConnectTimeoutMs()));
+        }
+        if (config.getRequestTimeoutMs() > 0) {
+            apiClient.setReadTimeout(Duration.ofMillis(config.getRequestTimeoutMs()));
+        }
+
+        // Configure Authorization Bearer token header interceptor
+        apiClient.setRequestInterceptor(builder -> builder.header("Authorization", "Bearer " + this.apiKey));
+
+        this.enrichmentApi = new EnrichmentApi(apiClient);
     }
 
     /**
@@ -107,12 +94,31 @@ public class XyoClient {
             throw new XyoException(ErrorCategory.VALIDATION, "request must not be null");
         }
         request.validate();
+
+        com.xyo.model.EnrichmentRequest apiReq = new com.xyo.model.EnrichmentRequest();
+        apiReq.setContent(request.getContent());
+        apiReq.setCountryCode(request.getCountryCode());
+
         try {
-            String jsonBody = OBJECT_MAPPER.writeValueAsString(request);
-            HttpResponse response = post("/v1/enrich", jsonBody);
-            return OBJECT_MAPPER.readValue(response.getBody(), EnrichmentResponse.class);
-        } catch (JsonProcessingException e) {
-            throw new XyoException(ErrorCategory.PARSING, "Failed to parse JSON: " + e.getMessage(), e);
+            com.xyo.model.EnrichmentResponse apiRes = enrichmentApi.enrichTransaction(apiReq);
+            if (apiRes == null) {
+                throw new XyoException(ErrorCategory.PARSING, "Enrichment API returned null response");
+            }
+            return new EnrichmentResponse(
+                apiRes.getMerchant(),
+                apiRes.getDescription(),
+                apiRes.getCategories(),
+                apiRes.getLogo(),
+                apiRes.getLocation(),
+                apiRes.getAddress()
+            );
+        } catch (ApiException e) {
+            throw handleApiException(e);
+        } catch (Exception e) {
+            if (e instanceof XyoException) {
+                throw (XyoException) e;
+            }
+            throw new XyoException(ErrorCategory.TRANSPORT, e.getMessage(), e);
         }
     }
 
@@ -124,21 +130,46 @@ public class XyoClient {
      * @throws XyoException if validation checks fail or the server returns an error response
      */
     public EnrichTransactionCollectionResponse enrichTransactionCollection(List<EnrichmentRequest> requests) {
+        return enrichTransactionCollection(requests, null);
+    }
+
+    /**
+     * Submits a collection of transaction requests for bulk asynchronous processing with an optional x-api-user header.
+     * 
+     * @param requests the list of transactions to enrich
+     * @param apiUser optional user header value
+     * @return a bulk collection status tracking descriptor including the batch id and link
+     * @throws XyoException if validation checks fail or the server returns an error response
+     */
+    public EnrichTransactionCollectionResponse enrichTransactionCollection(List<EnrichmentRequest> requests, String apiUser) {
         if (requests == null || requests.isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "requests list must not be null or empty");
         }
+        List<EnrichTransactionsRequestInner> apiReqList = new ArrayList<>(requests.size());
         for (EnrichmentRequest request : requests) {
             if (request == null) {
                 throw new XyoException(ErrorCategory.VALIDATION, "request inside collection must not be null");
             }
             request.validate();
+            EnrichTransactionsRequestInner inner = new EnrichTransactionsRequestInner();
+            inner.setContent(request.getContent());
+            inner.setCountryCode(request.getCountryCode());
+            apiReqList.add(inner);
         }
+
         try {
-            String jsonBody = OBJECT_MAPPER.writeValueAsString(requests);
-            HttpResponse response = post("/v1/enrich/bulk", jsonBody);
-            return OBJECT_MAPPER.readValue(response.getBody(), EnrichTransactionCollectionResponse.class);
-        } catch (JsonProcessingException e) {
-            throw new XyoException(ErrorCategory.PARSING, "Failed to parse JSON: " + e.getMessage(), e);
+            com.xyo.model.EnrichTransactionCollectionResponse apiRes = enrichmentApi.enrichTransactions(apiUser, apiReqList);
+            if (apiRes == null) {
+                throw new XyoException(ErrorCategory.PARSING, "Enrichment API returned null response");
+            }
+            return new EnrichTransactionCollectionResponse(apiRes.getId(), apiRes.getLink());
+        } catch (ApiException e) {
+            throw handleApiException(e);
+        } catch (Exception e) {
+            if (e instanceof XyoException) {
+                throw (XyoException) e;
+            }
+            throw new XyoException(ErrorCategory.TRANSPORT, e.getMessage(), e);
         }
     }
 
@@ -150,27 +181,57 @@ public class XyoClient {
      * @throws XyoException if parsing fails, trace status lookup returns bad code, or required elements are missing
      */
     public EnrichmentCollectionStatus enrichTransactionCollectionStatus(String id) {
+        return enrichTransactionCollectionStatus(id, null);
+    }
+
+    /**
+     * Checks the processing status of a previously submitted asynchronous bulk enrichment collection with optional x-api-user header.
+     * 
+     * @param id the unique batch tracking ID
+     * @param apiUser optional user header value
+     * @return the collection processing status (READY, PENDING, or FAILED)
+     * @throws XyoException if parsing fails, trace status lookup returns bad code, or required elements are missing
+     */
+    public EnrichmentCollectionStatus enrichTransactionCollectionStatus(String id, String apiUser) {
         if (id == null || id.isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "id must not be null or empty");
         }
         try {
-            // non-standard: upstream requires POST for status
-            String jsonBody = OBJECT_MAPPER.writeValueAsString(Collections.singletonMap("id", id));
-            HttpResponse response = post("/v1/enrich/bulk/status", jsonBody);
-            Map<String, EnrichmentCollectionStatus> result = OBJECT_MAPPER.readValue(
-                    response.getBody(),
-                    new TypeReference<Map<String, EnrichmentCollectionStatus>>() {}
-                );
-            if (result == null || !result.containsKey("status")) {
-                throw new XyoException(ErrorCategory.PARSING, "Response is missing the required 'status' key: " + response.getBody());
+            com.xyo.model.EnrichmentCollectionStatusResponse apiRes = enrichmentApi.getEnrichmentStatus(id, apiUser);
+            if (apiRes == null || apiRes.getStatus() == null) {
+                throw new XyoException(ErrorCategory.PARSING, "Response is missing the required 'status' key");
             }
-            EnrichmentCollectionStatus status = result.get("status");
-            if (status == null) {
-                throw new XyoException(ErrorCategory.PARSING, "Status value is null in response: " + response.getBody());
+            String rawStatus = apiRes.getStatus().getValue();
+            if (rawStatus == null) {
+                throw new XyoException(ErrorCategory.PARSING, "Status value is null in response");
             }
-            return status;
-        } catch (JsonProcessingException e) {
-            throw new XyoException(ErrorCategory.PARSING, "Failed to parse JSON: " + e.getMessage(), e);
+            return EnrichmentCollectionStatus.fromValue(rawStatus);
+        } catch (ApiException e) {
+            throw handleApiException(e);
+        } catch (IllegalArgumentException e) {
+            throw new XyoException(ErrorCategory.PARSING, e.getMessage(), e);
+        } catch (Exception e) {
+            if (e instanceof XyoException) {
+                throw (XyoException) e;
+            }
+            throw new XyoException(ErrorCategory.TRANSPORT, e.getMessage(), e);
         }
+    }
+
+    private XyoException handleApiException(ApiException e) {
+        if (e.getCode() > 0) {
+            return new XyoException(
+                ErrorCategory.HTTP,
+                "XYO API returned status code " + e.getCode() + ": " + e.getResponseBody(),
+                e.getCode(),
+                0,
+                e.getResponseBody()
+            );
+        }
+        if (e.getCause() instanceof com.fasterxml.jackson.core.JsonProcessingException
+                || (e.getMessage() != null && e.getMessage().contains("JSON"))) {
+            return new XyoException(ErrorCategory.PARSING, "Failed to parse JSON: " + e.getMessage(), e);
+        }
+        return new XyoException(ErrorCategory.TRANSPORT, e.getMessage(), e);
     }
 }

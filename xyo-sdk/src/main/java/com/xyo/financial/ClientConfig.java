@@ -26,7 +26,6 @@ public class ClientConfig {
 
     private String apiKey;
     private String apiBaseUrl = DEFAULT_API_BASE_URL;
-    private HttpTransport httpTransport;
 
     private long connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
     private long requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS;
@@ -76,22 +75,6 @@ public class ClientConfig {
      */
     @Deprecated
     public void setApiBaseUrl(String apiBaseUrl) { this.apiBaseUrl = apiBaseUrl; }
-
-    /**
-     * Gets the custom transport layer.
-     * 
-     * @return the HTTP transport
-     */
-    public HttpTransport getHttpTransport() { return httpTransport; }
-
-    /**
-     * Sets the custom transport layer.
-     * 
-     * @param httpTransport the HTTP transport
-     * @deprecated Use {@link Builder} configuration.
-     */
-    @Deprecated
-    public void setHttpTransport(HttpTransport httpTransport) { this.httpTransport = httpTransport; }
 
     /**
      * Gets the connection timeout in milliseconds.
@@ -179,7 +162,6 @@ public class ClientConfig {
     public static class Builder {
         private String apiKey;
         private String apiBaseUrl = DEFAULT_API_BASE_URL;
-        private HttpTransport httpTransport;
         private long connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
         private long requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS;
         private long maxResponseBytes = DEFAULT_MAX_RESPONSE_BYTES;
@@ -214,17 +196,6 @@ public class ClientConfig {
          */
         public Builder apiBaseUrl(String apiBaseUrl) {
             this.apiBaseUrl = apiBaseUrl;
-            return this;
-        }
-
-        /**
-         * Sets the HTTP transport.
-         * 
-         * @param httpTransport the transport
-         * @return this builder
-         */
-        public Builder httpTransport(HttpTransport httpTransport) {
-            this.httpTransport = httpTransport;
             return this;
         }
 
@@ -291,7 +262,6 @@ public class ClientConfig {
         public ClientConfig build() {
             ClientConfig config = new ClientConfig(apiKey);
             config.apiBaseUrl = this.apiBaseUrl;
-            config.httpTransport = this.httpTransport;
             config.connectTimeoutMs = this.connectTimeoutMs;
             config.requestTimeoutMs = this.requestTimeoutMs;
             config.maxResponseBytes = this.maxResponseBytes;
