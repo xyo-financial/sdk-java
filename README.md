@@ -255,6 +255,52 @@ public class BatchStatusMonitor {
 
 ---
 
+### 5. Download Bulk Enrichment Results (`downloadEnrichmentCollection`)
+
+Once a bulk enrichment job has reached `READY` status, download and decompress the `.tar.gz` archive of enriched results:
+
+```java
+package com.example.billing;
+
+import com.xyo.financial.EnrichmentCollectionStatus;
+import com.xyo.financial.EnrichmentResponse;
+import com.xyo.financial.XyoClient;
+import com.xyo.financial.XyoException;
+import java.util.List;
+
+public class BatchResultDownloader {
+
+    private final XyoClient xyoClient;
+
+    public BatchResultDownloader(XyoClient xyoClient) {
+        this.xyoClient = xyoClient;
+    }
+
+    public List<EnrichmentResponse> downloadResults(String downloadUrl) {
+        try {
+            // Downloads .tar.gz archive, decompresses gzip stream, and parses JSON records
+            List<EnrichmentResponse> results = xyoClient.downloadEnrichmentCollection(downloadUrl);
+
+            System.out.printf("Downloaded %d enriched transaction records.%n", results.size());
+            for (EnrichmentResponse item : results) {
+                System.out.printf("  - %s: %s [%s]%n",
+                        item.getMerchant(),
+                        item.getDescription(),
+                        String.join(", ", item.getCategories()));
+            }
+
+            return results;
+        } catch (XyoException ex) {
+            System.err.printf("Failed to download results [%s]: %s (HTTP %d)%n",
+                    ex.getCategory(), ex.getMessage(), ex.getHttpStatusCode());
+            throw ex;
+        }
+    }
+}
+```
+
+---
+
 ## 🛡 Robust RFC 7807 Error Handling
 
 The XYO API adheres to the **RFC 7807 (Problem Details for HTTP APIs)** specification. Non-2xx HTTP responses return structured problem detail documents (`application/problem+json` or `application/json`).
@@ -350,7 +396,7 @@ public class EnterpriseErrorHandler {
 git clone https://github.com/xyo-financial/sdk-java.git
 cd sdk-java
 
-# Compile and execute the full test suite (15 unit & integration boundary tests)
+# Compile and execute the full test suite (24 unit & integration boundary tests)
 mvn clean test --file xyo-sdk/pom.xml
 
 # Install to local Maven repository cache

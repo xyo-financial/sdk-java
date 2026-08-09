@@ -7,13 +7,17 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.zip.GZIPOutputStream;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -343,5 +347,335 @@ class XyoClientTest {
         assertEquals(ErrorCategory.HTTP, exception.getCategory());
         assertEquals(429, exception.getHttpStatusCode());
         assertEquals(errorJson, exception.getResponseBody());
+    }
+
+    @Test
+    void testDownloadEnrichmentCollection_Success() throws IOException {
+        String json1 = "{\n" +
+                "  \"merchant\": \"Uber\",\n" +
+                "  \"description\": \"UBER TRIP\",\n" +
+                "  \"categories\": [\"Transport\", \"Taxi\"],\n" +
+                "  \"logo\": \"https://example.com/uber.png\",\n" +
+                "  \"location\": \"San Francisco\",\n" +
+                "  \"address\": \"1455 Market St\"\n" +
+                "}";
+
+        String json2 = "{\n" +
+                "  \"merchant\": \"Starbucks\",\n" +
+                "  \"description\": \"STARBUCKS COFFEE\",\n" +
+                "  \"categories\": [\"Food\", \"Beverage\"],\n" +
+                "  \"logo\": \"https://example.com/sbux.png\",\n" +
+                "  \"location\": \"Seattle\",\n" +
+                "  \"address\": \"2401 Utah Ave S\"\n" +
+                "}";
+
+        Map<String, String> files = new LinkedHashMap<>();
+        files.put("00000000000000000000000000000001.json", json1);
+        files.put("00000000000000000000000000000002.json", json2);
+
+        byte[] archiveBytes = createTarGzArchive(files);
+
+        startTestServer(exchange -> {
+            assertEquals("GET", exchange.getRequestMethod());
+            assertEquals("/v1/enrich/bulk/download/batch-123", exchange.getRequestURI().getPath());
+            assertEquals("Bearer test-api-key", exchange.getRequestHeaders().getFirst("Authorization"));
+            assertEquals("application/gzip", exchange.getRequestHeaders().getFirst("Accept"));
+
+            exchange.getResponseHeaders().set("Content-Type", "application/gzip");
+            exchange.sendResponseHeaders(200, archiveBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(archiveBytes);
+            }
+        });
+
+        client = createTestClient();
+        List<EnrichmentResponse> results = client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/enrich/bulk/download/batch-123");
+
+        assertNotNull(results);
+        assertEquals(2, results.size());
+
+        EnrichmentResponse r1 = results.get(0);
+        assertEquals("Uber", r1.getMerchant());
+        assertEquals("UBER TRIP", r1.getDescription());
+        assertEquals(List.of("Transport", "Taxi"), r1.getCategories());
+        assertEquals("https://example.com/uber.png", r1.getLogo());
+        assertEquals("San Francisco", r1.getLocation());
+        assertEquals("1455 Market St", r1.getAddress());
+
+        EnrichmentResponse r2 = results.get(1);
+        assertEquals("Starbucks", r2.getMerchant());
+        assertEquals("STARBUCKS COFFEE", r2.getDescription());
+        assertEquals(List.of("Food", "Beverage"), r2.getCategories());
+        assertEquals("https://example.com/sbux.png", r2.getLogo());
+        assertEquals("Seattle", r2.getLocation());
+        assertEquals("2401 Utah Ave S", r2.getAddress());
+    }
+
+    @Test
+    void testDownloadEnrichmentCollection_RelativeUrl() throws IOException {
+        String json = "{\n" +
+                "  \"merchant\": \"Tesco\",\n" +
+                "  \"description\": \"TESCO STORES\",\n" +
+                "  \"categories\": [\"Groceries\"],\n" +
+                "  \"logo\": \"https://example.com/tesco.png\",\n" +
+                "  \"location\": \"London\",\n" +
+                "  \"address\": \"Welwyn Garden City\"\n" +
+                "}";
+
+        Map<String, String> files = new LinkedHashMap<>();
+        files.put("item.json", json);
+        byte[] archiveBytes = createTarGzArchive(files);
+
+        startTestServer(exchange -> {
+            assertEquals("GET", exchange.getRequestMethod());
+            assertEquals("/v1/enrich/bulk/download/batch-rel", exchange.getRequestURI().getPath());
+
+            exchange.getResponseHeaders().set("Content-Type", "application/gzip");
+            exchange.sendResponseHeaders(200, archiveBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(archiveBytes);
+            }
+        });
+
+        client = createTestClient();
+        List<EnrichmentResponse> results = client.downloadEnrichmentCollection("/v1/enrich/bulk/download/batch-rel");
+
+        assertNotNull(results);
+        assertEquals(1, results.size());
+        assertEquals("Tesco", results.get(0).getMerchant());
+    }
+
+    @Test
+    void testDownloadEnrichmentCollection_ValidationErrors() {
+        ClientConfig config = new ClientConfig.Builder("key")
+                .apiBaseUrl("https://api.xyo.financial")
+                .allowInsecureHttp(false)
+                .build();
+        client = new XyoClient(config);
+
+        // Null URL
+        XyoException exNull = assertThrows(XyoException.class, () -> client.downloadEnrichmentCollection(null));
+        assertEquals(ErrorCategory.VALIDATION, exNull.getCategory());
+
+        // Empty URL
+        XyoException exEmpty = assertThrows(XyoException.class, () -> client.downloadEnrichmentCollection(""));
+        assertEquals(ErrorCategory.VALIDATION, exEmpty.getCategory());
+
+        // Blank URL
+        XyoException exBlank = assertThrows(XyoException.class, () -> client.downloadEnrichmentCollection("   "));
+        assertEquals(ErrorCategory.VALIDATION, exBlank.getCategory());
+
+        // Insecure HTTP disallowed
+        XyoException exInsecure = assertThrows(XyoException.class, () -> client.downloadEnrichmentCollection("http://insecure.example.com/download.tar.gz"));
+        assertEquals(ErrorCategory.VALIDATION, exInsecure.getCategory());
+        assertTrue(exInsecure.getMessage().contains("Insecure HTTP connections are not allowed"));
+    }
+
+    @Test
+    void testDownloadEnrichmentCollection_HttpError404() throws IOException {
+        String errorBody = "{\"error\": \"Collection archive not found\"}";
+        startTestServer(exchange -> {
+            byte[] resBytes = errorBody.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(404, resBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(resBytes);
+            }
+        });
+
+        client = createTestClient();
+        XyoException exception = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/download/notfound");
+        });
+
+        assertEquals(ErrorCategory.HTTP, exception.getCategory());
+        assertEquals(404, exception.getHttpStatusCode());
+        assertEquals(errorBody, exception.getResponseBody());
+    }
+
+    @Test
+    void testDownloadEnrichmentCollection_HttpError500() throws IOException {
+        String errorBody = "Internal Server Error";
+        startTestServer(exchange -> {
+            byte[] resBytes = errorBody.getBytes(StandardCharsets.UTF_8);
+            exchange.sendResponseHeaders(500, resBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(resBytes);
+            }
+        });
+
+        client = createTestClient();
+        XyoException exception = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/download/500");
+        });
+
+        assertEquals(ErrorCategory.HTTP, exception.getCategory());
+        assertEquals(500, exception.getHttpStatusCode());
+        assertEquals(errorBody, exception.getResponseBody());
+    }
+
+    @Test
+    void testDownloadEnrichmentCollection_CorruptGzip() throws IOException {
+        startTestServer(exchange -> {
+            byte[] corruptBytes = "This is plain text, not valid gzip stream".getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/gzip");
+            exchange.sendResponseHeaders(200, corruptBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(corruptBytes);
+            }
+        });
+
+        client = createTestClient();
+        XyoException exception = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/download/corrupt-gzip");
+        });
+
+        assertEquals(ErrorCategory.PARSING, exception.getCategory());
+        assertTrue(exception.getMessage().contains("Failed to decompress gzip response"));
+    }
+
+    @Test
+    void testDownloadEnrichmentCollection_CorruptTar() throws IOException {
+        // Gzip compressed corrupt data (not valid tar 512-byte blocks)
+        ByteArrayOutputStream gzipBaos = new ByteArrayOutputStream();
+        try (GZIPOutputStream gzipOut = new GZIPOutputStream(gzipBaos)) {
+            // Write a truncated 100-byte block that doesn't form a valid 512-byte tar header
+            byte[] badHeader = new byte[512];
+            System.arraycopy("bad_entry.json".getBytes(StandardCharsets.UTF_8), 0, badHeader, 0, 14);
+            // Put invalid octal size
+            System.arraycopy("invalid_octal".getBytes(StandardCharsets.US_ASCII), 0, badHeader, 124, 12);
+            badHeader[156] = '0';
+            gzipOut.write(badHeader);
+        }
+        byte[] gzippedCorrupt = gzipBaos.toByteArray();
+
+        startTestServer(exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "application/gzip");
+            exchange.sendResponseHeaders(200, gzippedCorrupt.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(gzippedCorrupt);
+            }
+        });
+
+        client = createTestClient();
+        XyoException exception = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/download/corrupt-tar");
+        });
+
+        assertEquals(ErrorCategory.PARSING, exception.getCategory());
+    }
+
+    @Test
+    void testDownloadEnrichmentCollection_InvalidJsonInArchive() throws IOException {
+        Map<String, String> files = new LinkedHashMap<>();
+        files.put("invalid.json", "this is not valid json { ");
+        byte[] archiveBytes = createTarGzArchive(files);
+
+        startTestServer(exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "application/gzip");
+            exchange.sendResponseHeaders(200, archiveBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(archiveBytes);
+            }
+        });
+
+        client = createTestClient();
+        XyoException exception = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/download/invalid-json");
+        });
+
+        assertEquals(ErrorCategory.PARSING, exception.getCategory());
+        assertTrue(exception.getMessage().contains("Failed to parse JSON entry"));
+    }
+
+    @Test
+    void testDownloadEnrichmentCollection_EmptyArchive() throws IOException {
+        Map<String, String> files = new LinkedHashMap<>();
+        byte[] archiveBytes = createTarGzArchive(files);
+
+        startTestServer(exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "application/gzip");
+            exchange.sendResponseHeaders(200, archiveBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(archiveBytes);
+            }
+        });
+
+        client = createTestClient();
+        List<EnrichmentResponse> results = client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/download/empty");
+
+        assertNotNull(results);
+        assertTrue(results.isEmpty());
+    }
+
+    private static byte[] createTarGzArchive(Map<String, String> files) throws IOException {
+        ByteArrayOutputStream tarBaos = new ByteArrayOutputStream();
+        for (Map.Entry<String, String> entry : files.entrySet()) {
+            String name = entry.getKey();
+            byte[] content = entry.getValue().getBytes(StandardCharsets.UTF_8);
+
+            byte[] header = new byte[512];
+            // Name: 0..99
+            byte[] nameBytes = name.getBytes(StandardCharsets.UTF_8);
+            System.arraycopy(nameBytes, 0, header, 0, Math.min(nameBytes.length, 100));
+
+            // Mode: 100..107
+            byte[] modeBytes = "0000644\0".getBytes(StandardCharsets.US_ASCII);
+            System.arraycopy(modeBytes, 0, header, 100, modeBytes.length);
+
+            // UID & GID: 108..123
+            byte[] uidBytes = "0000000\0".getBytes(StandardCharsets.US_ASCII);
+            System.arraycopy(uidBytes, 0, header, 108, uidBytes.length);
+            System.arraycopy(uidBytes, 0, header, 116, uidBytes.length);
+
+            // Size: 124..135 (octal ASCII, 11 digits + null)
+            String sizeOctal = String.format("%011o", content.length) + "\0";
+            byte[] sizeBytes = sizeOctal.getBytes(StandardCharsets.US_ASCII);
+            System.arraycopy(sizeBytes, 0, header, 124, sizeBytes.length);
+
+            // Mtime: 136..147
+            byte[] mtimeBytes = "00000000000\0".getBytes(StandardCharsets.US_ASCII);
+            System.arraycopy(mtimeBytes, 0, header, 136, mtimeBytes.length);
+
+            // Typeflag: 156 ('0')
+            header[156] = '0';
+
+            // Magic: 257..262 ("ustar\0")
+            byte[] magicBytes = "ustar\0".getBytes(StandardCharsets.US_ASCII);
+            System.arraycopy(magicBytes, 0, header, 257, magicBytes.length);
+
+            // Version: 263..264 ("00")
+            header[263] = '0';
+            header[264] = '0';
+
+            // Checksum: 148..155 (fill with spaces, sum unsigned bytes, write octal)
+            for (int i = 148; i < 156; i++) {
+                header[i] = ' ';
+            }
+            long sum = 0;
+            for (byte b : header) {
+                sum += (b & 0xFF);
+            }
+            String chksumStr = String.format("%06o\0 ", sum);
+            byte[] chksumBytes = chksumStr.getBytes(StandardCharsets.US_ASCII);
+            System.arraycopy(chksumBytes, 0, header, 148, Math.min(chksumBytes.length, 8));
+
+            tarBaos.write(header);
+            tarBaos.write(content);
+
+            int padding = (512 - (content.length % 512)) % 512;
+            if (padding > 0) {
+                tarBaos.write(new byte[padding]);
+            }
+        }
+
+        // Two 512-byte zero blocks
+        tarBaos.write(new byte[1024]);
+
+        ByteArrayOutputStream gzipBaos = new ByteArrayOutputStream();
+        try (GZIPOutputStream gzipOut = new GZIPOutputStream(gzipBaos)) {
+            gzipOut.write(tarBaos.toByteArray());
+        }
+        return gzipBaos.toByteArray();
     }
 }
