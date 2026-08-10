@@ -1,31 +1,30 @@
 name: Regenerate Java OpenAPI Client
 
-# Triggers whenever the canonical spec is updated on main, or manually.
 on:
-  push:
-    branches:
-      - main
-    paths:
-      - 'specs/openapi.yml'
+  repository_dispatch:
+    types: [spec_tagged, spec_updated]
   workflow_dispatch:
+    inputs:
+      spec_tag:
+        description: 'Tag or branch in xyo-financial/specs to generate from'
+        required: false
+        default: 'main'
 
 jobs:
   regenerate:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-      pull-requests: write
 
     steps:
-      - name: Checkout java SDK repo
+      - name: Checkout SDK repository
         uses: actions/checkout@v4
-        with:
-          path: sdk
 
-      - name: Checkout specs repo
+      - name: Checkout OpenAPI specification
         uses: actions/checkout@v4
         with:
           repository: xyo-financial/specs
+          ref: ${{ github.event.client_payload.tag || inputs.spec_tag || 'main' }}
           path: specs
 
       - name: Set up Java 17
@@ -40,39 +39,45 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Generate OpenAPI client
+      - name: Generate OpenAPI Java client
         run: |
           npx -y @openapitools/openapi-generator-cli generate \
             -i specs/openapi.yml \
             -g java \
-            -o sdk/openapi \
-            --additional-properties=groupId=com.xyo,artifactId=xyo-sdk,artifactVersion=1.0.0,library=native,invokerPackage=com.xyo.client,apiPackage=com.xyo.api,modelPackage=com.xyo.model
+            -o openapi \
+            --additional-properties=groupId=com.xyo,artifactId=xyo-sdk,artifactVersion=2.0.0,library=native,invokerPackage=com.xyo.client,apiPackage=com.xyo.api,modelPackage=com.xyo.model \
+            --global-property apiTests=false,modelTests=false,apiDocs=false,modelDocs=false
+
+          # Remove generator noise and scaffolding files
+          rm -f openapi/git_push.sh \
+                openapi/.travis.yml \
+                openapi/build.gradle \
+                openapi/build.sbt \
+                openapi/gradle.properties \
+                openapi/gradlew \
+                openapi/gradlew.bat \
+                openapi/settings.gradle \
+                openapi/README.md \
+                openapi/src/main/AndroidManifest.xml
+          rm -rf openapi/.github \
+                 openapi/gradle \
+                 openapi/docs \
+                 openapi/api
+
+          # Clean up specs checkout so it is not committed
+          rm -rf specs
 
       - name: Install generated client to local Maven cache
-        run: mvn install -q -DskipTests
-        working-directory: sdk/openapi
+        run: mvn clean install -q -DskipTests --file openapi/pom.xml
 
-      - name: Compile SDK wrapper
-        run: mvn compile -q
-        working-directory: sdk/xyo-sdk
+      - name: Build and test Java SDK wrapper
+        run: |
+          mvn clean compile -q --file xyo-sdk/pom.xml
+          mvn test -B --file xyo-sdk/pom.xml
 
-      - name: Run SDK test suite
-        run: mvn test
-        working-directory: sdk/xyo-sdk
-
-      - name: Create pull request with regenerated client
-        uses: peter-evans/create-pull-request@v6
+      - name: Commit regenerated client
+        uses: stefanzweifel/git-auto-commit-action@v5
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          path: sdk
-          branch: chore/regenerate-openapi-client
-          title: 'chore: regenerate OpenAPI Java client from updated spec'
-          commit-message: 'chore: regenerate OpenAPI Java client'
-          body: |
-            Automated PR - the openapi.yml spec was updated and the Java client
-            has been regenerated via openapi-generator-cli.
+          commit_message: "chore: regenerate OpenAPI client from spec ${{ github.event.client_payload.tag || inputs.spec_tag || 'latest' }}"
+          file_pattern: "openapi/**"
 
-            - Generator: java (native library)
-            - Packages: com.xyo.client / com.xyo.api / com.xyo.model
-            - All 15 SDK tests pass
-          labels: automated, openapi
