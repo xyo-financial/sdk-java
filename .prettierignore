@@ -1,0 +1,4 @@
+# Generated OpenAPI code (read-only)
+openapi/
+target/
+**/target/
