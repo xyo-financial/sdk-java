@@ -13,7 +13,7 @@
     <a href="https://github.com/xyo-financial/sdk-java/actions/workflows/release.yml"><img src="https://github.com/xyo-financial/sdk-java/actions/workflows/release.yml/badge.svg" alt="Release Pipeline" /></a>
     <img src="https://img.shields.io/badge/Java-17%2B-blue" alt="Java 17+" />
     <img src="https://img.shields.io/badge/Maven_Central-com.xyo%3Axyo--sdk-informational" alt="Maven Central" />
-    <img src="https://img.shields.io/badge/License-BSD--3--Clause-green" alt="License" />
+    <img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License" />
 </p>
 
 ---
@@ -407,6 +407,6 @@ mvn clean install --file xyo-sdk/pom.xml
 
 ## 📄 License
 
-This project is licensed under the **BSD 3-Clause License** - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **Apache License, Version 2.0** - see the [LICENSE](LICENSE) file for details.
 
-Copyright &copy; 2025–2026 [Syniol Limited](https://syniol.com). All rights reserved.
+Copyright &copy; 2026 [Syniol Limited](https://syniol.com). All rights reserved.

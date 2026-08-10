@@ -224,3 +224,10 @@ Before submitting a Pull Request, confirm that:
 ## 🔒 Security Vulnerabilities
 
 If you discover a security vulnerability, please do not open a public GitHub issue. Follow the disclosure policy outlined in [`SECURITY.md`](SECURITY.md) or contact security directly at [security@syniol.com](mailto:security@syniol.com).
+
+---
+
+## 📄 License
+
+By contributing to the XYO Financial Java SDK, you agree that your contributions will be licensed under the [Apache License, Version 2.0](LICENSE) (Apache-2.0).
+
