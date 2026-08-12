@@ -27,7 +27,7 @@ jobs:
           cache: 'maven'
 
       - name: Compile Library
-        run: mvn -B clean compile --file xyo-sdk/pom.xml
+        run: mvn -B clean compile
 
       - name: Run Unit Tests
-        run: mvn -B test --file xyo-sdk/pom.xml
+        run: mvn -B test

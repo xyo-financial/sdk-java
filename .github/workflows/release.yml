@@ -58,7 +58,7 @@ jobs:
           cache: 'maven'
 
       - name: Build Library
-        run: mvn -B clean package --file xyo-sdk/pom.xml
+        run: mvn -B clean package
 
       - name: Build Archive
         run: |
@@ -109,7 +109,7 @@ jobs:
         # and installation of the Maven package works, and that the example application compiles
         # and runs against it successfully. Testing against the published artifact on Maven Central
         # directly in this pipeline is not feasible due to asynchronous staging release workflows.
-        run: mvn -B install --file xyo-sdk/pom.xml
+        run: mvn -B install
 
       - name: Build Example App
         run: mvn -B clean package --file example/pom.xml

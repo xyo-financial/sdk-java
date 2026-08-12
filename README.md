@@ -397,10 +397,10 @@ git clone https://github.com/xyo-financial/sdk-java.git
 cd sdk-java
 
 # Compile and execute the full test suite (24 unit & integration boundary tests)
-mvn clean test --file xyo-sdk/pom.xml
+mvn clean test
 
 # Install to local Maven repository cache
-mvn clean install --file xyo-sdk/pom.xml
+mvn clean install
 ```
 
 ---
