@@ -36,7 +36,7 @@ Maintained by [Syniol Limited](https://syniol.com) as the official Java distribu
 
 ---
 
-## ⚙️ Requirements
+## ⚙️ System Requirements
 
 * **JDK**: Java 17 LTS or newer (tested on Java 17, 21, and 22).
 * **Build System**: Maven 3.8+ or Gradle 7.0+.
@@ -44,7 +44,7 @@ Maintained by [Syniol Limited](https://syniol.com) as the official Java distribu
 
 ---
 
-## 📦 Dependency Installation
+## 📦 Installation
 
 The SDK is published to Maven Central. Add the dependency to your build configuration:
 
@@ -301,7 +301,7 @@ public class BatchResultDownloader {
 
 ---
 
-## 🛡 Robust RFC 7807 Error Handling
+## 🛡️ Robust RFC 7807 Error Handling
 
 The XYO API adheres to the **RFC 7807 (Problem Details for HTTP APIs)** specification. Non-2xx HTTP responses return structured problem detail documents (`application/problem+json` or `application/json`).
 
@@ -389,7 +389,7 @@ public class EnterpriseErrorHandler {
 
 ---
 
-## 🛠 Building and Testing from Source
+## 🛠️ Building and Testing from Source
 
 ```bash
 # Clone the repository

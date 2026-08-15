@@ -2,11 +2,11 @@
 
 This directory contains a basic example application demonstrating how to integrate and use the XYO Java SDK using Maven.
 
-## Requirements
+## ⚙️ Requirements
 * Java 17 or newer
 * Maven
 
-## Running the Example
+## 🚀 Running the Example
 
 Compile and run the application:
 ```sh
