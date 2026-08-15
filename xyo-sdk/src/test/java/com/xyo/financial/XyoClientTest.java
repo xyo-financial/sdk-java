@@ -707,6 +707,40 @@ class XyoClientTest {
         assertEquals("Tesco", results.get(0).getMerchant());
     }
 
+    @Test
+    void testDownloadEnrichmentCollection_AuthorizationHeaderNotLeakedToExternalHost() throws IOException {
+        String json = "{\"merchant\":\"Tesco\",\"description\":\"Groceries\",\"categories\":[\"Food\"],\"logo\":\"url\"}";
+        Map<String, String> files = new LinkedHashMap<>();
+        files.put("record.json", json);
+        byte[] archiveBytes = createTarGzArchive(files);
+
+        AtomicReference<String> capturedAuthHeader = new AtomicReference<>();
+
+        startTestServer(exchange -> {
+            capturedAuthHeader.set(exchange.getRequestHeaders().getFirst("Authorization"));
+            exchange.getResponseHeaders().set("Content-Type", "application/gzip");
+            exchange.sendResponseHeaders(200, archiveBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(archiveBytes);
+            }
+        });
+
+        // Client configured with a different base URL (e.g. https://api.xyo.financial)
+        ClientConfig config = new ClientConfig.Builder("secret-api-key")
+                .apiBaseUrl("https://api.xyo.financial")
+                .allowInsecureHttp(true)
+                .build();
+        client = new XyoClient(config);
+
+        // Downloading from a third-party host (127.0.0.1)
+        List<EnrichmentResponse> results = client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/download/external-cdn");
+
+        assertNotNull(results);
+        assertEquals(1, results.size());
+        // Verify Authorization Bearer was stripped and NOT sent to external host
+        assertNull(capturedAuthHeader.get(), "Authorization header must not be leaked to external hosts");
+    }
+
     private static byte[] createTarGzArchive(Map<String, String> files) throws IOException {
         ByteArrayOutputStream tarBaos = new ByteArrayOutputStream();
         for (Map.Entry<String, String> entry : files.entrySet()) {
