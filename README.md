@@ -396,7 +396,7 @@ public class EnterpriseErrorHandler {
 git clone https://github.com/xyo-financial/sdk-java.git
 cd sdk-java
 
-# Compile and execute the full test suite (28 unit & integration boundary tests)
+# Compile and execute the full test suite (31 unit & integration boundary tests)
 mvn clean test
 
 # Install to local Maven repository cache

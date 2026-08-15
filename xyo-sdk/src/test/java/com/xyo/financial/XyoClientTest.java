@@ -12,6 +12,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -739,6 +740,80 @@ class XyoClientTest {
         assertEquals(1, results.size());
         // Verify Authorization Bearer was stripped and NOT sent to external host
         assertNull(capturedAuthHeader.get(), "Authorization header must not be leaked to external hosts");
+    }
+
+    @Test
+    void testDynamicApiKeyRotation_Supplier() throws IOException {
+        AtomicReference<String> currentSecret = new AtomicReference<>("initial-key-1");
+        List<String> observedAuthHeaders = new ArrayList<>();
+
+        startTestServer(exchange -> {
+            observedAuthHeaders.add(exchange.getRequestHeaders().getFirst("Authorization"));
+            String response = "{\"merchant\":\"Starbucks\",\"description\":\"Coffee\",\"categories\":[\"Food\"],\"logo\":\"url\"}";
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, response.length());
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(response.getBytes(StandardCharsets.UTF_8));
+            }
+        });
+
+        ClientConfig config = new ClientConfig.Builder(currentSecret::get)
+                .apiBaseUrl("http://127.0.0.1:" + testServerPort)
+                .allowInsecureHttp(true)
+                .build();
+
+        try (XyoClient dynamicClient = new XyoClient(config)) {
+            // First call with initial key
+            dynamicClient.enrichTransaction(new EnrichmentRequest("Coffee purchase", "US"));
+            
+            // Rotate key dynamically in runtime
+            currentSecret.set("rotated-secret-key-2");
+            dynamicClient.enrichTransaction(new EnrichmentRequest("Second purchase", "US"));
+        }
+
+        assertEquals(2, observedAuthHeaders.size());
+        assertEquals("Bearer initial-key-1", observedAuthHeaders.get(0));
+        assertEquals("Bearer rotated-secret-key-2", observedAuthHeaders.get(1));
+    }
+
+    @Test
+    void testDownloadEnrichmentCollection_UnsupportedScheme_SSRFRejection() {
+        client = createTestClient();
+
+        XyoException ex1 = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("file:///etc/passwd");
+        });
+        assertEquals(ErrorCategory.VALIDATION, ex1.getCategory());
+        assertTrue(ex1.getMessage().contains("Unsupported URI scheme: 'file'"));
+
+        XyoException ex2 = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("ftp://malicious.host/archive.tar.gz");
+        });
+        assertEquals(ErrorCategory.VALIDATION, ex2.getCategory());
+        assertTrue(ex2.getMessage().contains("Unsupported URI scheme: 'ftp'"));
+    }
+
+    @Test
+    void testDownloadEnrichmentCollection_UnexpectedContentType_WAFChallenge() throws IOException {
+        String htmlChallenge = "<html><body><h1>Cloudflare / WAF Security Challenge</h1></body></html>";
+
+        startTestServer(exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
+            exchange.sendResponseHeaders(200, htmlChallenge.length());
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(htmlChallenge.getBytes(StandardCharsets.UTF_8));
+            }
+        });
+
+        client = createTestClient();
+
+        XyoException ex = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/download/waf-challenge");
+        });
+
+        assertEquals(ErrorCategory.HTTP, ex.getCategory());
+        assertTrue(ex.getMessage().contains("Unexpected Content-Type 'text/html; charset=UTF-8'"));
+        assertTrue(ex.getMessage().contains("Cloudflare / WAF Security Challenge"));
     }
 
     private static byte[] createTarGzArchive(Map<String, String> files) throws IOException {

@@ -21,15 +21,18 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.zip.GZIPInputStream;
 
+import javax.net.ssl.SSLParameters;
+import java.util.function.Supplier;
+
 /**
  * Thread-safe client library used for interacting with the XYO.Financial Transaction Enrichment API.
  * <p>
  * This client provides support for enriching single transactions, running bulk asynchronous transaction
  * collections, checking collection statuses, and downloading enrichment result archives.
  */
-public class XyoClient {
+public class XyoClient implements AutoCloseable {
 
-    private final String apiKey;
+    private final Supplier<String> apiKeySupplier;
     private final String apiBaseUrl;
     private final boolean allowInsecureHttp;
     private final long maxResponseBytes;
@@ -49,14 +52,25 @@ public class XyoClient {
         if (config == null) {
             throw new XyoException(ErrorCategory.VALIDATION, "ClientConfig must not be null");
         }
-        if (config.getApiKey() == null || config.getApiKey().isEmpty()) {
+        
+        if (config.getApiKeySupplier() != null) {
+            this.apiKeySupplier = config.getApiKeySupplier();
+        } else if (config.getApiKey() != null && !config.getApiKey().isEmpty()) {
+            String key = config.getApiKey();
+            this.apiKeySupplier = () -> key;
+        } else {
             throw new XyoException(ErrorCategory.VALIDATION, "api_key must not be empty");
         }
+
+        String initialKey = this.apiKeySupplier.get();
+        if (initialKey == null || initialKey.isEmpty()) {
+            throw new XyoException(ErrorCategory.VALIDATION, "api_key must not be empty");
+        }
+
         if (config.getApiBaseUrl() == null || config.getApiBaseUrl().isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "api_base_url must not be empty");
         }
 
-        this.apiKey = config.getApiKey();
         this.allowInsecureHttp = config.isAllowInsecureHttp();
         this.maxResponseBytes = config.getMaxResponseBytes();
 
@@ -84,6 +98,11 @@ public class XyoClient {
 
         if (config.getHttpClient() != null) {
             apiClient.setHttpClientBuilder(config.getHttpClient().newBuilder());
+        } else {
+            // Enforce minimum TLS 1.2+ version (PCI-DSS 4.0 §4.2.1 compliance)
+            SSLParameters sslParams = new SSLParameters();
+            sslParams.setProtocols(new String[]{"TLSv1.3", "TLSv1.2"});
+            apiClient.setHttpClientBuilder(HttpClient.newBuilder().sslParameters(sslParams));
         }
 
         if (config.getConnectTimeoutMs() > 0) {
@@ -96,8 +115,13 @@ public class XyoClient {
             this.requestTimeout = null;
         }
 
-        // Configure Authorization Bearer token header interceptor
-        apiClient.setRequestInterceptor(builder -> builder.header("Authorization", "Bearer " + this.apiKey));
+        // Configure dynamic Authorization Bearer token header interceptor (NIST SP 800-57 key rotation support)
+        apiClient.setRequestInterceptor(builder -> {
+            String key = this.apiKeySupplier.get();
+            if (key != null && !key.isEmpty()) {
+                builder.header("Authorization", "Bearer " + key);
+            }
+        });
 
         this.httpClient = apiClient.getHttpClient();
         this.objectMapper = apiClient.getObjectMapper();
@@ -255,18 +279,25 @@ public class XyoClient {
         URI uri;
         try {
             String targetUrl = downloadUrl.trim();
-            if (!targetUrl.toLowerCase().startsWith("http://") && !targetUrl.toLowerCase().startsWith("https://")) {
+            URI candidate = URI.create(targetUrl);
+            if (candidate.isAbsolute()) {
+                uri = candidate;
+            } else {
                 if (!targetUrl.startsWith("/")) {
                     targetUrl = "/" + targetUrl;
                 }
-                targetUrl = this.apiBaseUrl + targetUrl;
+                uri = URI.create(this.apiBaseUrl + targetUrl);
             }
-            uri = URI.create(targetUrl);
         } catch (IllegalArgumentException e) {
             throw new XyoException(ErrorCategory.VALIDATION, "Invalid download URL: " + downloadUrl, e);
         }
 
-        if (!this.allowInsecureHttp && "http".equalsIgnoreCase(uri.getScheme())) {
+        String scheme = uri.getScheme();
+        if (scheme == null || (!scheme.equalsIgnoreCase("https") && !scheme.equalsIgnoreCase("http"))) {
+            throw new XyoException(ErrorCategory.VALIDATION, "Unsupported URI scheme: '" + scheme + "'. Only HTTPS (and HTTP if explicitly allowed) is permitted.");
+        }
+
+        if (!this.allowInsecureHttp && "http".equalsIgnoreCase(scheme)) {
             throw new XyoException(ErrorCategory.VALIDATION, "Insecure HTTP connections are not allowed by default. Set allowInsecureHttp to true in ClientConfig if this is intentional.");
         }
 
@@ -275,11 +306,12 @@ public class XyoClient {
                 .GET()
                 .header("Accept", "application/gzip, application/x-tar, application/octet-stream;q=0.9, */*;q=0.8");
 
-        if (this.apiKey != null && !this.apiKey.isEmpty()) {
+        String currentKey = this.apiKeySupplier.get();
+        if (currentKey != null && !currentKey.isEmpty()) {
             URI baseUri = URI.create(this.apiBaseUrl);
             // Only attach Authorization header if target host matches configured API base URL host (prevents token leakage)
             if (baseUri.getHost() != null && baseUri.getHost().equalsIgnoreCase(uri.getHost())) {
-                requestBuilder.header("Authorization", "Bearer " + this.apiKey);
+                requestBuilder.header("Authorization", "Bearer " + currentKey);
             }
         }
 
@@ -315,6 +347,29 @@ public class XyoClient {
                     0,
                     errorBody
             );
+        }
+
+        // Validate Content-Type header to diagnose intermediate proxy/WAF challenge pages
+        String contentType = response.headers().firstValue("Content-Type").orElse("");
+        if (!contentType.isEmpty()) {
+            String ct = contentType.toLowerCase();
+            if (!ct.contains("gzip") && !ct.contains("tar") && !ct.contains("octet-stream") && !ct.contains("binary")) {
+                String preview = "";
+                try (InputStream is = response.body()) {
+                    if (is != null) {
+                        byte[] sample = is.readNBytes(512);
+                        preview = new String(sample, StandardCharsets.UTF_8);
+                    }
+                } catch (Exception ignored) {
+                }
+                throw new XyoException(
+                        ErrorCategory.HTTP,
+                        "Unexpected Content-Type '" + contentType + "' received when expecting binary archive (body preview: " + preview.trim() + ")",
+                        statusCode,
+                        0,
+                        preview
+                );
+            }
         }
 
         List<EnrichmentResponse> results = new ArrayList<>();
@@ -432,6 +487,14 @@ public class XyoClient {
             return "unknown";
         }
         return name.replaceAll("[\\r\\n\\p{C}]", "_");
+    }
+
+    /**
+     * Closes this client and releases any underlying resources.
+     */
+    @Override
+    public void close() {
+        // No-op for default HttpClient; enables try-with-resources and lifecycle management in enterprise containers
     }
 
     private XyoException handleApiException(ApiException e) {
