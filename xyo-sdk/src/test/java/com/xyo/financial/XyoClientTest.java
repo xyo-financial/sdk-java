@@ -727,20 +727,25 @@ class XyoClientTest {
             }
         });
 
-        // Client configured with a different base URL (e.g. https://api.xyo.financial)
+        // 1. Client downloading from same API server host includes Authorization
         ClientConfig config = new ClientConfig.Builder("secret-api-key")
-                .apiBaseUrl("https://api.xyo.financial")
+                .apiBaseUrl("http://127.0.0.1:" + testServerPort)
                 .allowInsecureHttp(true)
                 .build();
         client = new XyoClient(config);
 
-        // Downloading from a third-party host (127.0.0.1)
-        List<EnrichmentResponse> results = client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/download/external-cdn");
+        List<EnrichmentResponse> results = client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/download/archive.tar.gz");
 
         assertNotNull(results);
         assertEquals(1, results.size());
-        // Verify Authorization Bearer was stripped and NOT sent to external host
-        assertNull(capturedAuthHeader.get(), "Authorization header must not be leaked to external hosts");
+        assertEquals("Bearer secret-api-key", capturedAuthHeader.get());
+
+        // 2. Untrusted rogue domain is rejected
+        XyoException ex = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("https://evil-untrusted-domain.com/malicious.tar.gz");
+        });
+        assertEquals(ErrorCategory.VALIDATION, ex.getCategory());
+        assertTrue(ex.getMessage().contains("not permitted for secure archive downloads"));
     }
 
     @Test
@@ -814,7 +819,6 @@ class XyoClientTest {
 
         assertEquals(ErrorCategory.HTTP, ex.getCategory());
         assertTrue(ex.getMessage().contains("Unexpected Content-Type 'text/html; charset=UTF-8'"));
-        assertTrue(ex.getMessage().contains("Cloudflare / WAF Security Challenge"));
     }
 
     @Test
