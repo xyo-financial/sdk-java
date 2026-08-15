@@ -31,6 +31,7 @@ public class ClientConfig {
     public static final boolean DEFAULT_ALLOW_INSECURE_HTTP = false;
 
     private String apiKey;
+    private java.util.function.Supplier<String> apiKeySupplier;
     private String apiBaseUrl = resolveDefaultBaseUrl();
 
     private long connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
@@ -65,11 +66,25 @@ public class ClientConfig {
     }
 
     /**
-     * Gets the API key.
+     * Gets the API key. If an {@link java.util.function.Supplier} was configured, executes the supplier to fetch the current key.
      * 
      * @return the API key
      */
-    public String getApiKey() { return apiKey; }
+    public String getApiKey() {
+        if (apiKeySupplier != null) {
+            return apiKeySupplier.get();
+        }
+        return apiKey;
+    }
+
+    /**
+     * Gets the dynamic API key supplier, if configured.
+     * 
+     * @return the API key supplier, or null if a static key was supplied
+     */
+    public java.util.function.Supplier<String> getApiKeySupplier() {
+        return apiKeySupplier;
+    }
 
     /**
      * Sets the API key.
@@ -181,6 +196,7 @@ public class ClientConfig {
      */
     public static class Builder {
         private String apiKey;
+        private java.util.function.Supplier<String> apiKeySupplier;
         private String apiBaseUrl = resolveDefaultBaseUrl();
         private long connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
         private long requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS;
@@ -198,6 +214,15 @@ public class ClientConfig {
         }
 
         /**
+         * Creates a new Builder instance with a dynamic API key supplier for runtime secret rotation.
+         * 
+         * @param apiKeySupplier supplier providing current API keys
+         */
+        public Builder(java.util.function.Supplier<String> apiKeySupplier) {
+            this.apiKeySupplier = apiKeySupplier;
+        }
+
+        /**
          * Sets the API key.
          * 
          * @param apiKey the API key
@@ -205,6 +230,17 @@ public class ClientConfig {
          */
         public Builder apiKey(String apiKey) {
             this.apiKey = apiKey;
+            return this;
+        }
+
+        /**
+         * Sets the dynamic API key supplier for runtime secret rotation.
+         * 
+         * @param apiKeySupplier the dynamic key supplier
+         * @return this builder
+         */
+        public Builder apiKeySupplier(java.util.function.Supplier<String> apiKeySupplier) {
+            this.apiKeySupplier = apiKeySupplier;
             return this;
         }
 
@@ -281,6 +317,7 @@ public class ClientConfig {
          */
         public ClientConfig build() {
             ClientConfig config = new ClientConfig(apiKey);
+            config.apiKeySupplier = this.apiKeySupplier;
             config.apiBaseUrl = this.apiBaseUrl;
             config.connectTimeoutMs = this.connectTimeoutMs;
             config.requestTimeoutMs = this.requestTimeoutMs;
