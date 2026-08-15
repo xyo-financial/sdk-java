@@ -11,6 +11,12 @@ public class ClientConfig {
     
     /** The default XYO API base URL. */
     public static final String DEFAULT_API_BASE_URL = "https://api.xyo.financial";
+
+    /** Environment variable name used to configure the API base URL. */
+    public static final String ENV_API_BASE_URL = "XYO_API_BASE_URL";
+
+    /** Default maximum number of entries permitted when unpacking results archives (10,000). */
+    public static final int DEFAULT_MAX_TAR_ENTRIES = 10000;
     
     /** The default connection timeout in milliseconds (5 seconds). */
     public static final long DEFAULT_CONNECT_TIMEOUT_MS = 5000;
@@ -25,13 +31,26 @@ public class ClientConfig {
     public static final boolean DEFAULT_ALLOW_INSECURE_HTTP = false;
 
     private String apiKey;
-    private String apiBaseUrl = DEFAULT_API_BASE_URL;
+    private String apiBaseUrl = resolveDefaultBaseUrl();
 
     private long connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
     private long requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS;
     private long maxResponseBytes = DEFAULT_MAX_RESPONSE_BYTES;
     private boolean allowInsecureHttp = DEFAULT_ALLOW_INSECURE_HTTP;
     private HttpClient httpClient;
+
+    /**
+     * Resolves the default API base URL, checking the {@value #ENV_API_BASE_URL} environment variable first.
+     * 
+     * @return the resolved base URL
+     */
+    public static String resolveDefaultBaseUrl() {
+        String envUrl = System.getenv(ENV_API_BASE_URL);
+        if (envUrl != null && !envUrl.trim().isEmpty()) {
+            return envUrl.trim();
+        }
+        return DEFAULT_API_BASE_URL;
+    }
 
     /**
      * Constructs a new ClientConfig with the specified API key.
@@ -42,6 +61,7 @@ public class ClientConfig {
     @Deprecated
     public ClientConfig(String apiKey) {
         this.apiKey = apiKey;
+        this.apiBaseUrl = resolveDefaultBaseUrl();
     }
 
     /**
@@ -161,7 +181,7 @@ public class ClientConfig {
      */
     public static class Builder {
         private String apiKey;
-        private String apiBaseUrl = DEFAULT_API_BASE_URL;
+        private String apiBaseUrl = resolveDefaultBaseUrl();
         private long connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
         private long requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS;
         private long maxResponseBytes = DEFAULT_MAX_RESPONSE_BYTES;

@@ -276,7 +276,11 @@ public class XyoClient {
                 .header("Accept", "application/gzip");
 
         if (this.apiKey != null && !this.apiKey.isEmpty()) {
-            requestBuilder.header("Authorization", "Bearer " + this.apiKey);
+            URI baseUri = URI.create(this.apiBaseUrl);
+            // Only attach Authorization header if target host matches configured API base URL host (prevents token leakage)
+            if (baseUri.getHost() != null && baseUri.getHost().equalsIgnoreCase(uri.getHost())) {
+                requestBuilder.header("Authorization", "Bearer " + this.apiKey);
+            }
         }
 
         if (this.requestTimeout != null) {
@@ -330,7 +334,12 @@ public class XyoClient {
 
                 try (TarArchiveInputStream tarIn = new TarArchiveInputStream(boundedDecompressedStream)) {
                     TarArchiveEntry entry;
+                    int entryCount = 0;
                     while ((entry = tarIn.getNextTarEntry()) != null) {
+                        entryCount++;
+                        if (entryCount > ClientConfig.DEFAULT_MAX_TAR_ENTRIES) {
+                            throw new PayloadTooLargeException("Archive contains too many entries (exceeded maximum limit of " + ClientConfig.DEFAULT_MAX_TAR_ENTRIES + " entries)");
+                        }
                         if (entry.isDirectory()) {
                             continue;
                         }
