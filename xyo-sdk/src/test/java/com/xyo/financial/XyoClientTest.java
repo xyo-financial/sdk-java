@@ -271,8 +271,17 @@ class XyoClientTest {
         assertThrows(XyoException.class, () -> client.enrichTransaction(null));
         assertThrows(XyoException.class, () -> client.enrichTransaction(new EnrichmentRequest(null, "GB")));
         assertThrows(XyoException.class, () -> client.enrichTransaction(new EnrichmentRequest("", "GB")));
+        assertThrows(XyoException.class, () -> client.enrichTransaction(new EnrichmentRequest("   ", "GB")));
         assertThrows(XyoException.class, () -> client.enrichTransaction(new EnrichmentRequest("COSTA", null)));
         assertThrows(XyoException.class, () -> client.enrichTransaction(new EnrichmentRequest("COSTA", "")));
+        assertThrows(XyoException.class, () -> client.enrichTransaction(new EnrichmentRequest("COSTA", " ")));
+        // ISO 3166-1 alpha-2 requires exactly 2 characters
+        assertThrows(XyoException.class, () -> client.enrichTransaction(new EnrichmentRequest("COSTA", "G")));
+        assertThrows(XyoException.class, () -> client.enrichTransaction(new EnrichmentRequest("COSTA", "GBR")));
+        assertThrows(XyoException.class, () -> client.enrichTransaction(new EnrichmentRequest("COSTA", "USA")));
+        // Content exceeds max length of 128 characters
+        String longContent = "A".repeat(129);
+        assertThrows(XyoException.class, () -> client.enrichTransaction(new EnrichmentRequest(longContent, "GB")));
     }
 
     @Test
@@ -606,6 +615,96 @@ class XyoClientTest {
 
         assertNotNull(results);
         assertTrue(results.isEmpty());
+    }
+
+    @Test
+    void testDownloadEnrichmentCollection_CompressedExceedsMaxResponseBytes() throws IOException {
+        String json = "{\"merchant\":\"Costa\",\"description\":\"Coffee\",\"categories\":[\"Food\"],\"logo\":\"url\"}";
+        Map<String, String> files = new LinkedHashMap<>();
+        files.put("item.json", json);
+        byte[] archiveBytes = createTarGzArchive(files);
+
+        startTestServer(exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "application/gzip");
+            exchange.sendResponseHeaders(200, archiveBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(archiveBytes);
+            }
+        });
+
+        // Configure client with maxResponseBytes smaller than compressed archive
+        ClientConfig config = new ClientConfig.Builder("test-key")
+                .apiBaseUrl("http://127.0.0.1:" + testServerPort)
+                .allowInsecureHttp(true)
+                .maxResponseBytes(50) // smaller than archiveBytes
+                .build();
+        client = new XyoClient(config);
+
+        XyoException ex = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/download/bounded-test");
+        });
+
+        assertEquals(ErrorCategory.PARSING, ex.getCategory());
+        assertTrue(ex.getMessage().contains("Payload exceeded maximum allowed size"));
+    }
+
+    @Test
+    void testDownloadEnrichmentCollection_DecompressedZipBombExceedsMaxResponseBytes() throws IOException {
+        // Create an entry that is small when compressed but expands beyond decompressed limit
+        String largeJson = "{\"merchant\":\"" + "A".repeat(5000) + "\",\"description\":\"Coffee\",\"categories\":[\"Food\"],\"logo\":\"url\"}";
+        Map<String, String> files = new LinkedHashMap<>();
+        files.put("item.json", largeJson);
+        byte[] archiveBytes = createTarGzArchive(files);
+
+        startTestServer(exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "application/gzip");
+            exchange.sendResponseHeaders(200, archiveBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(archiveBytes);
+            }
+        });
+
+        // Set limit larger than compressed stream (~150B) but smaller than decompressed (>5KB)
+        ClientConfig config = new ClientConfig.Builder("test-key")
+                .apiBaseUrl("http://127.0.0.1:" + testServerPort)
+                .allowInsecureHttp(true)
+                .maxResponseBytes(500)
+                .build();
+        client = new XyoClient(config);
+
+        XyoException ex = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/download/zip-bomb");
+        });
+
+        assertEquals(ErrorCategory.PARSING, ex.getCategory());
+        assertTrue(ex.getMessage().contains("Payload exceeded maximum allowed size"));
+    }
+
+    @Test
+    void testDownloadEnrichmentCollection_ZipSlipPathTraversalIgnored() throws IOException {
+        String validJson = "{\"merchant\":\"Tesco\",\"description\":\"Groceries\",\"categories\":[\"Food\"],\"logo\":\"url\"}";
+        String maliciousJson = "{\"merchant\":\"Evil\",\"description\":\"Hacked\",\"categories\":[\"Malware\"],\"logo\":\"url\"}";
+
+        Map<String, String> files = new LinkedHashMap<>();
+        files.put("../../../../etc/passwd.json", maliciousJson);
+        files.put("/absolute/path/attack.json", maliciousJson);
+        files.put("valid_record.json", validJson);
+        byte[] archiveBytes = createTarGzArchive(files);
+
+        startTestServer(exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "application/gzip");
+            exchange.sendResponseHeaders(200, archiveBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(archiveBytes);
+            }
+        });
+
+        client = createTestClient();
+        List<EnrichmentResponse> results = client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/download/zip-slip");
+
+        assertNotNull(results);
+        assertEquals(1, results.size());
+        assertEquals("Tesco", results.get(0).getMerchant());
     }
 
     private static byte[] createTarGzArchive(Map<String, String> files) throws IOException {

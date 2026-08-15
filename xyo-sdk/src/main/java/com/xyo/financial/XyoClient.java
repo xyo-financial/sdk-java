@@ -5,7 +5,10 @@ import com.xyo.client.ApiClient;
 import com.xyo.client.ApiException;
 import com.xyo.api.EnrichmentApi;
 import com.xyo.model.EnrichTransactionsRequestInner;
+import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
+import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
@@ -15,7 +18,6 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 import java.util.zip.GZIPInputStream;
 
@@ -30,6 +32,7 @@ public class XyoClient {
     private final String apiKey;
     private final String apiBaseUrl;
     private final boolean allowInsecureHttp;
+    private final long maxResponseBytes;
     private final HttpClient httpClient;
     private final Duration requestTimeout;
     private final ObjectMapper objectMapper;
@@ -55,6 +58,7 @@ public class XyoClient {
 
         this.apiKey = config.getApiKey();
         this.allowInsecureHttp = config.isAllowInsecureHttp();
+        this.maxResponseBytes = config.getMaxResponseBytes();
 
         String baseUrl = config.getApiBaseUrl();
         int end = baseUrl.length();
@@ -309,136 +313,109 @@ public class XyoClient {
             );
         }
 
-        byte[] tarBytes;
+        List<EnrichmentResponse> results = new ArrayList<>();
         try (InputStream responseStream = response.body()) {
             if (responseStream == null) {
                 throw new XyoException(ErrorCategory.PARSING, "Response body is null");
             }
-            try (GZIPInputStream gzipIn = new GZIPInputStream(responseStream)) {
-                tarBytes = gzipIn.readAllBytes();
+
+            InputStream boundedRawStream = (this.maxResponseBytes > 0)
+                    ? new BoundedInputStream(responseStream, this.maxResponseBytes, "compressed HTTP stream")
+                    : responseStream;
+
+            try (GZIPInputStream gzipIn = new GZIPInputStream(boundedRawStream)) {
+                InputStream boundedDecompressedStream = (this.maxResponseBytes > 0)
+                        ? new BoundedInputStream(gzipIn, this.maxResponseBytes, "decompressed archive stream")
+                        : gzipIn;
+
+                try (TarArchiveInputStream tarIn = new TarArchiveInputStream(boundedDecompressedStream)) {
+                    TarArchiveEntry entry;
+                    while ((entry = tarIn.getNextTarEntry()) != null) {
+                        if (entry.isDirectory()) {
+                            continue;
+                        }
+                        String entryName = entry.getName();
+                        // Zip-Slip and path traversal mitigation
+                        if (entryName == null || entryName.contains("..") || entryName.startsWith("/") || entryName.startsWith("\\")) {
+                            continue;
+                        }
+                        if (entryName.endsWith(".json")) {
+                            try {
+                                EnrichmentResponse enrichmentResponse = this.objectMapper.readValue(
+                                        new NonClosingInputStream(tarIn),
+                                        EnrichmentResponse.class
+                                );
+                                if (enrichmentResponse != null) {
+                                    results.add(enrichmentResponse);
+                                }
+                            } catch (Exception e) {
+                                throw new XyoException(ErrorCategory.PARSING, "Failed to parse JSON entry '" + entryName + "': " + e.getMessage(), e);
+                            }
+                        }
+                    }
+                }
             }
+        } catch (PayloadTooLargeException e) {
+            throw new XyoException(ErrorCategory.PARSING, e.getMessage(), e);
         } catch (IOException e) {
             throw new XyoException(ErrorCategory.PARSING, "Failed to decompress gzip response: " + e.getMessage(), e);
-        }
-
-        return parseTarArchive(tarBytes);
-    }
-
-    private List<EnrichmentResponse> parseTarArchive(byte[] tarBytes) {
-        List<EnrichmentResponse> results = new ArrayList<>();
-        if (tarBytes == null || tarBytes.length == 0) {
-            return results;
-        }
-
-        int offset = 0;
-        String nextLongName = null;
-
-        while (offset + 512 <= tarBytes.length) {
-            byte[] header = Arrays.copyOfRange(tarBytes, offset, offset + 512);
-
-            // Check if header block is all zeros
-            boolean allZeros = true;
-            for (int i = 0; i < 512; i++) {
-                if (header[i] != 0) {
-                    allZeros = false;
-                    break;
-                }
-            }
-            if (allZeros) {
-                break;
-            }
-
-            String entryName;
-            if (nextLongName != null) {
-                entryName = nextLongName;
-                nextLongName = null;
-            } else {
-                int nameEnd = 0;
-                while (nameEnd < 100 && header[nameEnd] != 0) {
-                    nameEnd++;
-                }
-                entryName = new String(header, 0, nameEnd, StandardCharsets.UTF_8).trim();
-
-                // Check ustar prefix
-                int prefixEnd = 345;
-                while (prefixEnd < 500 && header[prefixEnd] != 0) {
-                    prefixEnd++;
-                }
-                if (prefixEnd > 345) {
-                    String prefix = new String(header, 345, prefixEnd - 345, StandardCharsets.UTF_8).trim();
-                    if (!prefix.isEmpty()) {
-                        entryName = prefix + "/" + entryName;
-                    }
-                }
-            }
-
-            byte typeFlag = header[156];
-            long size;
-            try {
-                size = parseOctal(header, 124, 12);
-            } catch (IllegalArgumentException e) {
-                throw new XyoException(ErrorCategory.PARSING, "Invalid tar entry size for entry: " + entryName, e);
-            }
-
-            offset += 512;
-
-            if (offset + size > tarBytes.length) {
-                throw new XyoException(ErrorCategory.PARSING, "Truncated tar archive: entry '" + entryName + "' extends beyond archive boundary");
-            }
-
-            if (typeFlag == 'L') {
-                nextLongName = new String(tarBytes, offset, (int) size, StandardCharsets.UTF_8).replace("\0", "").trim();
-            } else if (typeFlag == '0' || typeFlag == 0 || typeFlag == (byte) '0') {
-                if (size > 0 && (entryName.endsWith(".json") || isJsonPayload(tarBytes, offset, (int) size))) {
-                    byte[] contentBytes = Arrays.copyOfRange(tarBytes, offset, offset + (int) size);
-                    try {
-                        EnrichmentResponse enrichmentResponse = this.objectMapper.readValue(contentBytes, EnrichmentResponse.class);
-                        if (enrichmentResponse != null) {
-                            results.add(enrichmentResponse);
-                        }
-                    } catch (Exception e) {
-                        throw new XyoException(ErrorCategory.PARSING, "Failed to parse JSON entry '" + entryName + "': " + e.getMessage(), e);
-                    }
-                }
-            }
-
-            // Advance past content blocks (rounded up to 512-byte boundary)
-            long paddedSize = (size + 511) & ~511L;
-            offset += (int) paddedSize;
         }
 
         return results;
     }
 
-    private static boolean isJsonPayload(byte[] bytes, int offset, int length) {
-        for (int i = offset; i < offset + length; i++) {
-            byte b = bytes[i];
-            if (b == ' ' || b == '\t' || b == '\r' || b == '\n') {
-                continue;
-            }
-            return b == '{';
+    private static class PayloadTooLargeException extends IOException {
+        PayloadTooLargeException(String message) {
+            super(message);
         }
-        return false;
     }
 
-    private static long parseOctal(byte[] header, int offset, int length) {
-        long result = 0;
-        int end = offset + length;
-        int start = offset;
-        while (start < end && (header[start] == ' ' || header[start] == 0)) {
-            start++;
+    private static class BoundedInputStream extends FilterInputStream {
+        private final long maxBytes;
+        private final String description;
+        private long bytesRead = 0;
+
+        BoundedInputStream(InputStream in, long maxBytes, String description) {
+            super(in);
+            this.maxBytes = maxBytes;
+            this.description = description;
         }
-        for (int i = start; i < end; i++) {
-            byte b = header[i];
-            if (b == 0 || b == ' ') {
-                break;
+
+        @Override
+        public int read() throws IOException {
+            int b = super.read();
+            if (b != -1) {
+                checkCount(1);
             }
-            if (b < '0' || b > '7') {
-                throw new IllegalArgumentException("Invalid octal character: " + (char) b);
-            }
-            result = (result << 3) + (b - '0');
+            return b;
         }
-        return result;
+
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            int count = super.read(b, off, len);
+            if (count > 0) {
+                checkCount(count);
+            }
+            return count;
+        }
+
+        private void checkCount(long count) throws IOException {
+            bytesRead += count;
+            if (maxBytes > 0 && bytesRead > maxBytes) {
+                throw new PayloadTooLargeException("Payload exceeded maximum allowed size of " + maxBytes + " bytes (" + description + ")");
+            }
+        }
+    }
+
+    private static class NonClosingInputStream extends FilterInputStream {
+        NonClosingInputStream(InputStream in) {
+            super(in);
+        }
+
+        @Override
+        public void close() {
+            // No-op to prevent downstream parsers (like Jackson) from closing the underlying tar archive stream
+        }
     }
 
     private XyoException handleApiException(ApiException e) {
