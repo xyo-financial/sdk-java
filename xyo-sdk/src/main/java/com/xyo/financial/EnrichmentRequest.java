@@ -54,8 +54,14 @@ public class EnrichmentRequest {
         if (content == null || content.trim().isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "content must not be null or empty");
         }
+        if (content.length() > 128) {
+            throw new XyoException(ErrorCategory.VALIDATION, "content must not exceed 128 characters");
+        }
         if (countryCode == null || countryCode.trim().isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "countryCode must not be null or empty");
+        }
+        if (countryCode.trim().length() != 2) {
+            throw new XyoException(ErrorCategory.VALIDATION, "countryCode must be exactly 2 characters (ISO 3166-1 alpha-2)");
         }
     }
 
