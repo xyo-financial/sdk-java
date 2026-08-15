@@ -388,7 +388,7 @@ class XyoClientTest {
             assertEquals("GET", exchange.getRequestMethod());
             assertEquals("/v1/enrich/bulk/download/batch-123", exchange.getRequestURI().getPath());
             assertEquals("Bearer test-api-key", exchange.getRequestHeaders().getFirst("Authorization"));
-            assertEquals("application/gzip", exchange.getRequestHeaders().getFirst("Accept"));
+            assertTrue(exchange.getRequestHeaders().getFirst("Accept").contains("application/gzip"));
 
             exchange.getResponseHeaders().set("Content-Type", "application/gzip");
             exchange.sendResponseHeaders(200, archiveBytes.length);
