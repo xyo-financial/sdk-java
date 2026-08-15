@@ -170,7 +170,7 @@ rm -rf openapi/.github \
 
 ---
 
-## 🛡 Quality Gates & Verification Standards
+## 🛡️ Quality Gates & Verification Standards
 
 All Pull Requests must pass institutional quality gates before approval and merge:
 
