@@ -273,7 +273,7 @@ public class XyoClient {
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .uri(uri)
                 .GET()
-                .header("Accept", "application/gzip");
+                .header("Accept", "application/gzip, application/x-tar, application/octet-stream;q=0.9, */*;q=0.8");
 
         if (this.apiKey != null && !this.apiKey.isEmpty()) {
             URI baseUri = URI.create(this.apiBaseUrl);
@@ -358,7 +358,7 @@ public class XyoClient {
                                     results.add(enrichmentResponse);
                                 }
                             } catch (Exception e) {
-                                throw new XyoException(ErrorCategory.PARSING, "Failed to parse JSON entry '" + entryName + "': " + e.getMessage(), e);
+                                throw new XyoException(ErrorCategory.PARSING, "Failed to parse JSON entry '" + sanitizeEntryName(entryName) + "': " + e.getMessage(), e);
                             }
                         }
                     }
@@ -425,6 +425,13 @@ public class XyoClient {
         public void close() {
             // No-op to prevent downstream parsers (like Jackson) from closing the underlying tar archive stream
         }
+    }
+
+    private static String sanitizeEntryName(String name) {
+        if (name == null) {
+            return "unknown";
+        }
+        return name.replaceAll("[\\r\\n\\p{C}]", "_");
     }
 
     private XyoException handleApiException(ApiException e) {
