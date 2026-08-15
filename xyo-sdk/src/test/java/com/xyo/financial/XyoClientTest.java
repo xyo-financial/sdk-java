@@ -5,6 +5,7 @@ import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayOutputStream;
@@ -814,6 +815,47 @@ class XyoClientTest {
         assertEquals(ErrorCategory.HTTP, ex.getCategory());
         assertTrue(ex.getMessage().contains("Unexpected Content-Type 'text/html; charset=UTF-8'"));
         assertTrue(ex.getMessage().contains("Cloudflare / WAF Security Challenge"));
+    }
+
+    @Test
+    @DisplayName("Submitting bulk enrichment collection with CRLF characters in apiUser throws VALIDATION exception (CWE-113)")
+    void testEnrichTransactionCollection_ApiUserCrlfInjectionThrows() {
+        client = createTestClient();
+        List<EnrichmentRequest> requests = List.of(new EnrichmentRequest("STARBUCKS", "US"));
+
+        XyoException ex = assertThrows(XyoException.class, () -> {
+            client.enrichTransactionCollection(requests, "admin\r\nX-Injected-Header: evil");
+        });
+
+        assertEquals(ErrorCategory.VALIDATION, ex.getCategory());
+        assertTrue(ex.getMessage().contains("apiUser must not contain CR or LF characters"));
+    }
+
+    @Test
+    @DisplayName("Checking collection status with CRLF characters in apiUser throws VALIDATION exception (CWE-113)")
+    void testEnrichTransactionCollectionStatus_ApiUserCrlfInjectionThrows() {
+        client = createTestClient();
+
+        XyoException ex = assertThrows(XyoException.class, () -> {
+            client.enrichTransactionCollectionStatus("batch-123", "admin\nInjected: evil");
+        });
+
+        assertEquals(ErrorCategory.VALIDATION, ex.getCategory());
+        assertTrue(ex.getMessage().contains("apiUser must not contain CR or LF characters"));
+    }
+
+    @Test
+    @DisplayName("ClientConfig.Builder throws IllegalArgumentException when neither apiKey nor apiKeySupplier is provided")
+    void testClientConfigBuilder_EmptyApiKeyAndNullSupplierThrows() {
+        IllegalArgumentException ex1 = assertThrows(IllegalArgumentException.class, () -> {
+            new ClientConfig.Builder((String) null).build();
+        });
+        assertTrue(ex1.getMessage().contains("apiKey or apiKeySupplier must be provided"));
+
+        IllegalArgumentException ex2 = assertThrows(IllegalArgumentException.class, () -> {
+            new ClientConfig.Builder("").build();
+        });
+        assertTrue(ex2.getMessage().contains("apiKey or apiKeySupplier must be provided"));
     }
 
     private static byte[] createTarGzArchive(Map<String, String> files) throws IOException {

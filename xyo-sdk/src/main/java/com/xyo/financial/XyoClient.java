@@ -188,6 +188,9 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if validation checks fail or the server returns an error response
      */
     public EnrichTransactionCollectionResponse enrichTransactionCollection(List<EnrichmentRequest> requests, String apiUser) {
+        if (apiUser != null && (apiUser.contains("\r") || apiUser.contains("\n"))) {
+            throw new XyoException(ErrorCategory.VALIDATION, "apiUser must not contain CR or LF characters");
+        }
         if (requests == null || requests.isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "requests list must not be null or empty");
         }
@@ -239,6 +242,9 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if parsing fails, trace status lookup returns bad code, or required elements are missing
      */
     public EnrichmentCollectionStatus enrichTransactionCollectionStatus(String id, String apiUser) {
+        if (apiUser != null && (apiUser.contains("\r") || apiUser.contains("\n"))) {
+            throw new XyoException(ErrorCategory.VALIDATION, "apiUser must not contain CR or LF characters");
+        }
         if (id == null || id.isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "id must not be null or empty");
         }
