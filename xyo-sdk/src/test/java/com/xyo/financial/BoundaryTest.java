@@ -2,6 +2,7 @@ package com.xyo.financial;
 
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 import java.io.OutputStream;
@@ -10,7 +11,8 @@ import java.nio.charset.StandardCharsets;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class BoundaryTest {
+@DisplayName("Boundary condition tests for maxResponseBytes parsing")
+class BoundaryTest {
     private HttpServer testServer;
 
     @AfterEach
@@ -21,7 +23,8 @@ public class BoundaryTest {
     }
 
     @Test
-    public void testExactBoundary() throws Exception {
+    @DisplayName("Exact boundary limit response triggers PARSING error on non-JSON response")
+    void testExactBoundary() throws Exception {
         String exactResponseBody = "12345"; // 5 bytes non-JSON response
         testServer = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         testServer.createContext("/", exchange -> {

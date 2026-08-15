@@ -316,6 +316,9 @@ public class ClientConfig {
          * @return the constructed ClientConfig
          */
         public ClientConfig build() {
+            if ((this.apiKey == null || this.apiKey.trim().isEmpty()) && this.apiKeySupplier == null) {
+                throw new IllegalArgumentException("apiKey or apiKeySupplier must be provided");
+            }
             ClientConfig config = new ClientConfig(apiKey);
             config.apiKeySupplier = this.apiKeySupplier;
             config.apiBaseUrl = this.apiBaseUrl;
