@@ -312,11 +312,18 @@ public class XyoClient implements AutoCloseable {
                 .GET()
                 .header("Accept", "application/gzip, application/x-tar, application/octet-stream;q=0.9, */*;q=0.8");
 
+        URI baseUri = URI.create(this.apiBaseUrl);
+        boolean isApiHost = (baseUri.getHost() != null && baseUri.getHost().equalsIgnoreCase(uri.getHost()));
+        boolean isS3 = (uri.getHost() != null && uri.getHost().toLowerCase().endsWith(".amazonaws.com"));
+
+        if (!isApiHost && !isS3) {
+            throw new XyoException(ErrorCategory.VALIDATION, "Domain '" + uri.getHost() + "' is not permitted for secure archive downloads");
+        }
+
         String currentKey = this.apiKeySupplier.get();
         if (currentKey != null && !currentKey.isEmpty()) {
-            URI baseUri = URI.create(this.apiBaseUrl);
             // Only attach Authorization header if target host matches configured API base URL host (prevents token leakage)
-            if (baseUri.getHost() != null && baseUri.getHost().equalsIgnoreCase(uri.getHost())) {
+            if (isApiHost) {
                 requestBuilder.header("Authorization", "Bearer " + currentKey);
             }
         }
@@ -360,20 +367,12 @@ public class XyoClient implements AutoCloseable {
         if (!contentType.isEmpty()) {
             String ct = contentType.toLowerCase();
             if (!ct.contains("gzip") && !ct.contains("tar") && !ct.contains("octet-stream") && !ct.contains("binary")) {
-                String preview = "";
-                try (InputStream is = response.body()) {
-                    if (is != null) {
-                        byte[] sample = is.readNBytes(512);
-                        preview = new String(sample, StandardCharsets.UTF_8);
-                    }
-                } catch (Exception ignored) {
-                }
                 throw new XyoException(
                         ErrorCategory.HTTP,
-                        "Unexpected Content-Type '" + contentType + "' received when expecting binary archive (body preview: " + preview.trim() + ")",
+                        "Unexpected Content-Type '" + contentType + "' received when expecting binary archive",
                         statusCode,
                         0,
-                        preview
+                        ""
                 );
             }
         }
