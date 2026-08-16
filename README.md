@@ -18,7 +18,7 @@
 
 ---
 
-## 📖 Executive Summary
+## 📖 Summary
 
 The **XYO Financial Java SDK** delivers a high-performance, strictly typed, thread-safe client library for integrating XYO's transaction enrichment engine into enterprise Java ecosystems. Engineered for Tier-1 financial institutions, neobanks, payment processors, and fintech platforms, this SDK transforms raw, cryptic payment counterparty strings into structured, categorized, and geocoded merchant intelligence.
 
@@ -26,7 +26,7 @@ Maintained by [Syniol Limited](https://syniol.com) as the official Java distribu
 
 ---
 
-## 🏗 Enterprise Architectural Principles
+## 🏗 Architectural Principles
 
 1. **Modern Java 17+ Baseline**: Leverages modern Java language features, immutable record-style builders, JSpecify nullability annotations (`@Nullable`), and native `java.net.http.HttpClient` transport.
 2. **Thread Safety & Immutability**: All client and model instances are defensive-copied and thread-safe. A single `XyoClient` instance can be safely injected across multiple concurrent application threads.
