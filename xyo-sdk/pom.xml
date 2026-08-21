@@ -3,7 +3,7 @@
   xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
 
-  <groupId>com.xyo.financial</groupId>
+  <groupId>financial.xyo</groupId>
   <artifactId>xyo-sdk</artifactId>
   <version>2.0.0</version>
 
@@ -42,10 +42,10 @@
   </dependencyManagement>
 
   <dependencies>
-    <!-- Generated OpenAPI client (com.xyo.client / com.xyo.api / com.xyo.model) -->
+    <!-- Generated OpenAPI client (financial.xyo.client / financial.xyo.api / financial.xyo.model) -->
     <dependency>
-      <groupId>com.xyo</groupId>
-      <artifactId>xyo-sdk</artifactId>
+      <groupId>financial.xyo</groupId>
+      <artifactId>xyo-openapi</artifactId>
       <version>2.0.0</version>
     </dependency>
 

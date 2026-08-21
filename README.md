@@ -10,7 +10,7 @@
   <a href="https://github.com/xyo-financial/sdk-java/actions/workflows/ci.yml"><img src="https://github.com/xyo-financial/sdk-java/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI Build" /></a>
   <a href="https://github.com/xyo-financial/sdk-java/actions/workflows/release.yml"><img src="https://github.com/xyo-financial/sdk-java/actions/workflows/release.yml/badge.svg" alt="Release Pipeline" /></a>
   <img src="https://img.shields.io/badge/Java-17%2B-blue" alt="Java 17+" />
-  <img src="https://img.shields.io/badge/Maven_Central-com.xyo%3Axyo--sdk-informational" alt="Maven Central" />
+  <img src="https://img.shields.io/badge/Maven_Central-financial.xyo%3Axyo--sdk-informational" alt="Maven Central" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License" /></a>
 </p>
 
@@ -55,19 +55,9 @@ The SDK is published to Maven Central. Add the dependency to your build configur
 
 ```xml
 <dependency>
-    <groupId>com.xyo</groupId>
+    <groupId>financial.xyo</groupId>
     <artifactId>xyo-sdk</artifactId>
-    <version>1.0.0</version>
-</dependency>
-```
-
-*(If utilizing the internal financial suite distribution coordinates):*
-
-```xml
-<dependency>
-    <groupId>com.xyo.financial</groupId>
-    <artifactId>xyo-sdk</artifactId>
-    <version>1.0.2</version>
+    <version>2.0.0</version>
 </dependency>
 ```
 
@@ -79,7 +69,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'com.xyo:xyo-sdk:1.0.0'
+    implementation 'financial.xyo:xyo-sdk:2.0.0'
 }
 ```
 
@@ -91,7 +81,7 @@ repositories {
 }
 
 dependencies {
-    implementation("com.xyo:xyo-sdk:1.0.0")
+    implementation("financial.xyo:xyo-sdk:2.0.0")
 }
 ```
 
@@ -106,8 +96,8 @@ Initialize `XyoClient` using the immutable `ClientConfig.Builder`. In enterprise
 ```java
 package com.example.billing;
 
-import com.xyo.financial.ClientConfig;
-import com.xyo.financial.XyoClient;
+import financial.xyo.ClientConfig;
+import financial.xyo.XyoClient;
 import java.net.http.HttpClient;
 import java.time.Duration;
 
@@ -140,10 +130,10 @@ Execute real-time, synchronous transaction enrichment on payment authorization h
 ```java
 package com.example.billing;
 
-import com.xyo.financial.EnrichmentRequest;
-import com.xyo.financial.EnrichmentResponse;
-import com.xyo.financial.XyoClient;
-import com.xyo.financial.XyoException;
+import financial.xyo.EnrichmentRequest;
+import financial.xyo.EnrichmentResponse;
+import financial.xyo.XyoClient;
+import financial.xyo.XyoException;
 
 public class TransactionEnrichmentService {
 
@@ -189,9 +179,9 @@ For high-volume ETL pipelines, nightly reconciliations, or large statement migra
 ```java
 package com.example.billing;
 
-import com.xyo.financial.EnrichTransactionCollectionResponse;
-import com.xyo.financial.EnrichmentRequest;
-import com.xyo.financial.XyoClient;
+import financial.xyo.EnrichTransactionCollectionResponse;
+import financial.xyo.EnrichmentRequest;
+import financial.xyo.XyoClient;
 import java.util.List;
 
 public class BatchEnrichmentService {
@@ -225,8 +215,8 @@ Poll or track the progress of an asynchronous bulk enrichment task:
 ```java
 package com.example.billing;
 
-import com.xyo.financial.EnrichmentCollectionStatus;
-import com.xyo.financial.XyoClient;
+import financial.xyo.EnrichmentCollectionStatus;
+import financial.xyo.XyoClient;
 
 public class BatchStatusMonitor {
 
@@ -265,10 +255,10 @@ Once a bulk enrichment job has reached `READY` status, download and decompress t
 ```java
 package com.example.billing;
 
-import com.xyo.financial.EnrichmentCollectionStatus;
-import com.xyo.financial.EnrichmentResponse;
-import com.xyo.financial.XyoClient;
-import com.xyo.financial.XyoException;
+import financial.xyo.EnrichmentCollectionStatus;
+import financial.xyo.EnrichmentResponse;
+import financial.xyo.XyoClient;
+import financial.xyo.XyoException;
 import java.util.List;
 
 public class BatchResultDownloader {
@@ -315,8 +305,8 @@ Define a `@Configuration` class to expose `XyoClient` as a Spring-managed bean. 
 ```java
 package com.example.config;
 
-import com.xyo.financial.ClientConfig;
-import com.xyo.financial.XyoClient;
+import financial.xyo.ClientConfig;
+import financial.xyo.XyoClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -343,9 +333,9 @@ Inject and consume anywhere across your Spring services or controllers:
 ```java
 package com.example.billing;
 
-import com.xyo.financial.EnrichmentRequest;
-import com.xyo.financial.EnrichmentResponse;
-import com.xyo.financial.XyoClient;
+import financial.xyo.EnrichmentRequest;
+import financial.xyo.EnrichmentResponse;
+import financial.xyo.XyoClient;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -372,8 +362,8 @@ For Quarkus applications, declare `XyoClient` as an `@ApplicationScoped` CDI pro
 ```java
 package com.example.config;
 
-import com.xyo.financial.ClientConfig;
-import com.xyo.financial.XyoClient;
+import financial.xyo.ClientConfig;
+import financial.xyo.XyoClient;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Disposes;
 import jakarta.enterprise.inject.Produces;
@@ -408,8 +398,8 @@ For Micronaut microservices, register a singleton factory bean:
 ```java
 package com.example.config;
 
-import com.xyo.financial.ClientConfig;
-import com.xyo.financial.XyoClient;
+import financial.xyo.ClientConfig;
+import financial.xyo.XyoClient;
 import io.micronaut.context.annotation.Factory;
 import io.micronaut.context.annotation.Value;
 import jakarta.inject.Singleton;
@@ -466,9 +456,9 @@ package com.example.billing;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.xyo.client.ApiException;
-import com.xyo.financial.ErrorCategory;
-import com.xyo.financial.XyoException;
+import financial.xyo.client.ApiException;
+import financial.xyo.ErrorCategory;
+import financial.xyo.XyoException;
 
 public class EnterpriseErrorHandler {
 
