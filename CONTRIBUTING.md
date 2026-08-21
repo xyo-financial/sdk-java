@@ -1,6 +1,6 @@
 # Contributing to the XYO Financial Java SDK
 
-Thank you for your interest in contributing to the **XYO Financial SDK for Java** (`com.xyo.financial:xyo-sdk`).
+Thank you for your interest in contributing to the **XYO Financial SDK for Java** (`financial.xyo:xyo-sdk`).
 
 This SDK is engineered to provide institutional-grade reliability, thread-safety, and developer ergonomics for integrating XYO's transaction enrichment services into enterprise Java ecosystems. To maintain the highest standards of stability, performance, and security across Tier-1 financial institutions, all contributions must adhere to the architectural guidelines, contribution workflows, and quality gates detailed below.
 
@@ -20,15 +20,15 @@ The Java SDK codebase is partitioned into two distinct, decoupled layers:
                                              ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────────┐
 │ 1. GENERATED LAYER (openapi/)                                                            │
-│    • Low-level HTTP transport and serialization (com.xyo.client, com.xyo.api, com.xyo.model)│
+│    • Low-level HTTP transport and serialization (financial.xyo.client, financial.xyo.api, financial.xyo.model)│
 │    • READ-ONLY contract — strictly auto-generated from specs                             │
 │    • ⚠️ READ-ONLY: DO NOT EDIT OR FORMAT MANUALLY                                        │
 └────────────────────────────────────────────┬─────────────────────────────────────────────┘
-                                             │  Maven Dependency (com.xyo:xyo-sdk:2.0.0)
+                                             │  Maven Dependency (financial.xyo:xyo-sdk:2.0.0)
                                              ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────────┐
 │ 2. WRAPPER LAYER (xyo-sdk/)                                                              │
-│    • Public Entrypoint: com.xyo.financial.XyoClient                                      │
+│    • Public Entrypoint: financial.xyo.XyoClient                                      │
 │    • Java 17+ fluent builders, defensive immutability, and thread safety                 │
 │    • Native java.net.http.HttpClient transport, timeout bounds, and RFC 7807 errors     │
 │    • Editable for ergonomics, helpers, validation, and unit tests                        │
@@ -38,16 +38,16 @@ The Java SDK codebase is partitioned into two distinct, decoupled layers:
 ### 1. Low-Level Generated Layer (`openapi/`)
 
 * **Location:** [`openapi/`](openapi)
-* **Packages:** `com.xyo.client`, `com.xyo.api`, `com.xyo.model`
-* **Artifact:** `com.xyo:xyo-sdk:2.0.0`
+* **Packages:** `financial.xyo.client`, `financial.xyo.api`, `financial.xyo.model`
+* **Artifact:** `financial.xyo:xyo-sdk:2.0.0`
 * **Lifecycle:** **Read-Only / Auto-Generated**.
 * **Policy:** **DO NOT EDIT MANUALLY**. All source files inside this directory are auto-generated from the canonical OpenAPI specification maintained in the [`xyo-financial/specs`](https://github.com/xyo-financial/specs) repository. Any manual modifications committed directly to `openapi/` will be overwritten without warning during automated regeneration pipelines.
 
 ### 2. High-Level Wrapper Layer (`xyo-sdk/`)
 
 * **Location:** [`xyo-sdk/`](xyo-sdk)
-* **Primary Entrypoint:** [`com.xyo.financial.XyoClient`](xyo-sdk/src/main/java/com/xyo/financial/XyoClient.java)
-* **Artifact:** `com.xyo.financial:xyo-sdk:2.0.0`
+* **Primary Entrypoint:** [`financial.xyo.XyoClient`](xyo-sdk/src/main/java/com/xyo/financial/XyoClient.java)
+* **Artifact:** `financial.xyo:xyo-sdk:2.0.0`
 * **Lifecycle:** **Actively Maintained & Extensible**.
 * **Purpose:** Serves as the idiomatic, developer-friendly facade for financial applications. Key responsibilities include:
   * **Java 17+ Modern Ergonomics:** Fluent builder patterns (`ClientConfig.Builder`, `EnrichmentRequest.Builder`), immutable data structures, and defensive copying.
@@ -58,7 +58,7 @@ The Java SDK codebase is partitioned into two distinct, decoupled layers:
 
 | Dimension | Generated Layer (`openapi/`) | Wrapper Layer (`xyo-sdk/`) |
 | :--- | :--- | :--- |
-| **Package** | `com.xyo.client`, `com.xyo.api`, `com.xyo.model` | `com.xyo.financial` |
+| **Package** | `financial.xyo.client`, `financial.xyo.api`, `financial.xyo.model` | `financial.xyo` |
 | **Source of Truth** | `xyo-financial/specs` (`openapi.yml`) | Java SDK Repository |
 | **Editability** | ❌ Read-Only (Machine generated) | ✅ Editable (Human authored) |
 | **Target Audience** | Internal SDK plumbing | Public SDK consumers & enterprise services |
@@ -131,7 +131,7 @@ npx -y @openapitools/openapi-generator-cli generate \
   -i ../specs/openapi.yml \
   -g java \
   -o ./openapi \
-  --additional-properties=groupId=com.xyo,artifactId=xyo-sdk,artifactVersion=2.0.0,library=native,invokerPackage=com.xyo.client,apiPackage=com.xyo.api,modelPackage=com.xyo.model \
+  --additional-properties=groupId=financial.xyo,artifactId=xyo-sdk,artifactVersion=2.0.0,library=native,invokerPackage=financial.xyo.client,apiPackage=financial.xyo.api,modelPackage=financial.xyo.model \
   --global-property apiTests=false,modelTests=false,apiDocs=false,modelDocs=false
 ```
 
@@ -140,10 +140,10 @@ npx -y @openapitools/openapi-generator-cli generate \
 * `-g java`: Target Java client generator.
 * `-o ./openapi`: Destination directory for generated sources and POM.
 * `library=native`: Enforces modern Java 11+ / 17+ `java.net.http.HttpClient` transport without third-party HTTP client bloat.
-* `groupId=com.xyo`, `artifactId=xyo-sdk`, `artifactVersion=2.0.0`: Coordinates for the internal low-level artifact.
-* `invokerPackage=com.xyo.client`: Package for HTTP transport, serialization, and authentication interceptors.
-* `apiPackage=com.xyo.api`: Package for API operation classes (e.g., `EnrichmentApi`).
-* `modelPackage=com.xyo.model`: Package for generated request/response DTOs.
+* `groupId=financial.xyo`, `artifactId=xyo-sdk`, `artifactVersion=2.0.0`: Coordinates for the internal low-level artifact.
+* `invokerPackage=financial.xyo.client`: Package for HTTP transport, serialization, and authentication interceptors.
+* `apiPackage=financial.xyo.api`: Package for API operation classes (e.g., `EnrichmentApi`).
+* `modelPackage=financial.xyo.model`: Package for generated request/response DTOs.
 * `--global-property apiTests=false,modelTests=false,apiDocs=false,modelDocs=false`: Suppresses generator skeleton documentation and test stubs in favor of repository-level tests.
 
 #### Post-Generation Clean-Up
@@ -196,7 +196,7 @@ The standalone example application in [`example/`](example) must build and run c
 mvn clean package --file example/pom.xml
 
 # Run example application
-mvn exec:java -Dexec.mainClass="com.xyo.example.Main" --file example/pom.xml
+mvn exec:java -Dexec.mainClass="financial.xyo.example.Main" --file example/pom.xml
 ```
 
 ### 4. Java 17+ Idiomatic Standards
@@ -215,7 +215,7 @@ Before submitting a Pull Request, confirm that:
 - [ ] **Two-Layer Compliance:** No manual edits were introduced inside the `openapi/` directory.
 - [ ] **Tests Added:** Unit tests (JUnit 5) have been added or updated to cover all new behaviors or bug fixes.
 - [ ] **Quality Gates Passed:** `mvn compile` and `mvn test` execute cleanly across `openapi/`, `xyo-sdk/`, and `example/`.
-- [ ] **Backwards Compatibility:** Public API signatures in `com.xyo.financial` maintain backward compatibility.
+- [ ] **Backwards Compatibility:** Public API signatures in `financial.xyo` maintain backward compatibility.
 - [ ] **Documentation:** Relevant Javadoc comments, `README.md`, and code examples have been updated.
 - [ ] **Commit Hygiene:** Commits follow conventional commit formatting (e.g., `feat:`, `fix:`, `docs:`, `ci:`, `chore:`).
 

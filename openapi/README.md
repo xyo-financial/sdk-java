@@ -43,7 +43,7 @@ Add this dependency to your project's POM:
 
 ```xml
 <dependency>
-  <groupId>com.xyo</groupId>
+  <groupId>financial.xyo</groupId>
   <artifactId>xyo-sdk</artifactId>
   <version>1.0.0</version>
   <scope>compile</scope>
@@ -55,7 +55,7 @@ Add this dependency to your project's POM:
 Add this dependency to your project's build file:
 
 ```groovy
-compile "com.xyo:xyo-sdk:1.0.0"
+compile "financial.xyo:xyo-sdk:1.0.0"
 ```
 
 ### Others
@@ -77,9 +77,9 @@ Please follow the [installation](#installation) instruction and execute the foll
 
 ```java
 
-import com.xyo.client.*;
-import com.xyo.model.*;
-import com.xyo.api.EnrichmentApi;
+import financial.xyo.client.*;
+import financial.xyo.model.*;
+import financial.xyo.api.EnrichmentApi;
 
 public class EnrichmentApiExample {
 

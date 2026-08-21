@@ -25,12 +25,12 @@ Enrich a single financial transaction synchronously.
 
 ```java
 // Import classes:
-import com.xyo.client.ApiClient;
-import com.xyo.client.ApiException;
-import com.xyo.client.Configuration;
-import com.xyo.client.auth.*;
-import com.xyo.client.models.*;
-import com.xyo.api.EnrichmentApi;
+import financial.xyo.client.ApiClient;
+import financial.xyo.client.ApiException;
+import financial.xyo.client.Configuration;
+import financial.xyo.client.auth.*;
+import financial.xyo.client.models.*;
+import financial.xyo.api.EnrichmentApi;
 
 public class Example {
     public static void main(String[] args) {
@@ -97,13 +97,13 @@ Enrich a single financial transaction synchronously.
 
 ```java
 // Import classes:
-import com.xyo.client.ApiClient;
-import com.xyo.client.ApiException;
-import com.xyo.client.ApiResponse;
-import com.xyo.client.Configuration;
-import com.xyo.client.auth.*;
-import com.xyo.client.models.*;
-import com.xyo.api.EnrichmentApi;
+import financial.xyo.client.ApiClient;
+import financial.xyo.client.ApiException;
+import financial.xyo.client.ApiResponse;
+import financial.xyo.client.Configuration;
+import financial.xyo.client.auth.*;
+import financial.xyo.client.models.*;
+import financial.xyo.api.EnrichmentApi;
 
 public class Example {
     public static void main(String[] args) {
@@ -173,12 +173,12 @@ Enrich a collection of financial transactions asynchronously.
 
 ```java
 // Import classes:
-import com.xyo.client.ApiClient;
-import com.xyo.client.ApiException;
-import com.xyo.client.Configuration;
-import com.xyo.client.auth.*;
-import com.xyo.client.models.*;
-import com.xyo.api.EnrichmentApi;
+import financial.xyo.client.ApiClient;
+import financial.xyo.client.ApiException;
+import financial.xyo.client.Configuration;
+import financial.xyo.client.auth.*;
+import financial.xyo.client.models.*;
+import financial.xyo.api.EnrichmentApi;
 
 public class Example {
     public static void main(String[] args) {
@@ -247,13 +247,13 @@ Enrich a collection of financial transactions asynchronously.
 
 ```java
 // Import classes:
-import com.xyo.client.ApiClient;
-import com.xyo.client.ApiException;
-import com.xyo.client.ApiResponse;
-import com.xyo.client.Configuration;
-import com.xyo.client.auth.*;
-import com.xyo.client.models.*;
-import com.xyo.api.EnrichmentApi;
+import financial.xyo.client.ApiClient;
+import financial.xyo.client.ApiException;
+import financial.xyo.client.ApiResponse;
+import financial.xyo.client.Configuration;
+import financial.xyo.client.auth.*;
+import financial.xyo.client.models.*;
+import financial.xyo.api.EnrichmentApi;
 
 public class Example {
     public static void main(String[] args) {
@@ -325,12 +325,12 @@ Get the status of an asynchronous bulk enrichment job.
 
 ```java
 // Import classes:
-import com.xyo.client.ApiClient;
-import com.xyo.client.ApiException;
-import com.xyo.client.Configuration;
-import com.xyo.client.auth.*;
-import com.xyo.client.models.*;
-import com.xyo.api.EnrichmentApi;
+import financial.xyo.client.ApiClient;
+import financial.xyo.client.ApiException;
+import financial.xyo.client.Configuration;
+import financial.xyo.client.auth.*;
+import financial.xyo.client.models.*;
+import financial.xyo.api.EnrichmentApi;
 
 public class Example {
     public static void main(String[] args) {
@@ -399,13 +399,13 @@ Get the status of an asynchronous bulk enrichment job.
 
 ```java
 // Import classes:
-import com.xyo.client.ApiClient;
-import com.xyo.client.ApiException;
-import com.xyo.client.ApiResponse;
-import com.xyo.client.Configuration;
-import com.xyo.client.auth.*;
-import com.xyo.client.models.*;
-import com.xyo.api.EnrichmentApi;
+import financial.xyo.client.ApiClient;
+import financial.xyo.client.ApiException;
+import financial.xyo.client.ApiResponse;
+import financial.xyo.client.Configuration;
+import financial.xyo.client.auth.*;
+import financial.xyo.client.models.*;
+import financial.xyo.api.EnrichmentApi;
 
 public class Example {
     public static void main(String[] args) {

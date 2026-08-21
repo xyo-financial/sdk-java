@@ -118,4 +118,4 @@ jobs:
         run: mvn -B clean package --file example/pom.xml
 
       - name: Run Example Application
-        run: mvn -B exec:java -Dexec.mainClass="com.xyo.example.Main" --file example/pom.xml
+        run: mvn -B exec:java -Dexec.mainClass="financial.xyo.example.Main" --file example/pom.xml

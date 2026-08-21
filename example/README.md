@@ -10,5 +10,5 @@ This directory contains a basic example application demonstrating how to integra
 
 Compile and run the application:
 ```sh
-mvn clean package exec:java -Dexec.mainClass="com.xyo.example.Main"
+mvn clean package exec:java -Dexec.mainClass="financial.xyo.example.Main"
 ```
