@@ -52,8 +52,13 @@ class XyoClientTest {
             try {
                 handler.handle(exchange);
             } catch (Throwable t) {
-                handlerException.set(t);
-                exchange.sendResponseHeaders(500, -1);
+                if (!(t instanceof IOException)) {
+                    handlerException.set(t);
+                }
+                try {
+                    exchange.sendResponseHeaders(500, -1);
+                } catch (Exception ignored) {
+                }
             }
         });
         testServer.start();
@@ -802,12 +807,15 @@ class XyoClientTest {
     @Test
     void testDownloadEnrichmentCollection_UnexpectedContentType_WAFChallenge() throws IOException {
         String htmlChallenge = "<html><body><h1>Cloudflare / WAF Security Challenge</h1></body></html>";
+        byte[] bytes = htmlChallenge.getBytes(StandardCharsets.UTF_8);
 
         startTestServer(exchange -> {
             exchange.getResponseHeaders().set("Content-Type", "text/html; charset=UTF-8");
-            exchange.sendResponseHeaders(200, htmlChallenge.length());
+            exchange.sendResponseHeaders(200, bytes.length);
             try (OutputStream os = exchange.getResponseBody()) {
-                os.write(htmlChallenge.getBytes(StandardCharsets.UTF_8));
+                os.write(bytes);
+            } catch (IOException ignored) {
+                // Client may abort connection upon receiving non-tar content-type header
             }
         });
 
