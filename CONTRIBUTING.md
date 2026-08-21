@@ -1,6 +1,6 @@
 # Contributing to the XYO Financial Java SDK
 
-Thank you for your interest in contributing to the **XYO Financial SDK for Java** (`financial.xyo:xyo-sdk`).
+Thank you for your interest in contributing to the **XYO Financial SDK for Java** (`io.github.xyo-financial:xyo-sdk`).
 
 This SDK is engineered to provide institutional-grade reliability, thread-safety, and developer ergonomics for integrating XYO's transaction enrichment services into enterprise Java ecosystems. To maintain the highest standards of stability, performance, and security across Tier-1 financial institutions, all contributions must adhere to the architectural guidelines, contribution workflows, and quality gates detailed below.
 
@@ -24,7 +24,7 @@ The Java SDK codebase is partitioned into two distinct, decoupled layers:
 │    • READ-ONLY contract — strictly auto-generated from specs                             │
 │    • ⚠️ READ-ONLY: DO NOT EDIT OR FORMAT MANUALLY                                        │
 └────────────────────────────────────────────┬─────────────────────────────────────────────┘
-                                             │  Maven Dependency (financial.xyo:xyo-sdk:2.0.0)
+                                             │  Maven Dependency (io.github.xyo-financial:xyo-sdk:2.0.0)
                                              ▼
 ┌──────────────────────────────────────────────────────────────────────────────────────────┐
 │ 2. WRAPPER LAYER (xyo-sdk/)                                                              │
@@ -39,7 +39,7 @@ The Java SDK codebase is partitioned into two distinct, decoupled layers:
 
 * **Location:** [`openapi/`](openapi)
 * **Packages:** `financial.xyo.client`, `financial.xyo.api`, `financial.xyo.model`
-* **Artifact:** `financial.xyo:xyo-sdk:2.0.0`
+* **Artifact:** `io.github.xyo-financial:xyo-sdk:2.0.0`
 * **Lifecycle:** **Read-Only / Auto-Generated**.
 * **Policy:** **DO NOT EDIT MANUALLY**. All source files inside this directory are auto-generated from the canonical OpenAPI specification maintained in the [`xyo-financial/specs`](https://github.com/xyo-financial/specs) repository. Any manual modifications committed directly to `openapi/` will be overwritten without warning during automated regeneration pipelines.
 
@@ -47,7 +47,7 @@ The Java SDK codebase is partitioned into two distinct, decoupled layers:
 
 * **Location:** [`xyo-sdk/`](xyo-sdk)
 * **Primary Entrypoint:** [`financial.xyo.XyoClient`](xyo-sdk/src/main/java/com/xyo/financial/XyoClient.java)
-* **Artifact:** `financial.xyo:xyo-sdk:2.0.0`
+* **Artifact:** `io.github.xyo-financial:xyo-sdk:2.0.0`
 * **Lifecycle:** **Actively Maintained & Extensible**.
 * **Purpose:** Serves as the idiomatic, developer-friendly facade for financial applications. Key responsibilities include:
   * **Java 17+ Modern Ergonomics:** Fluent builder patterns (`ClientConfig.Builder`, `EnrichmentRequest.Builder`), immutable data structures, and defensive copying.
@@ -131,7 +131,7 @@ npx -y @openapitools/openapi-generator-cli generate \
   -i ../specs/openapi.yml \
   -g java \
   -o ./openapi \
-  --additional-properties=groupId=financial.xyo,artifactId=xyo-sdk,artifactVersion=2.0.0,library=native,invokerPackage=financial.xyo.client,apiPackage=financial.xyo.api,modelPackage=financial.xyo.model \
+  --additional-properties=groupId=io.github.xyo-financial,artifactId=xyo-sdk,artifactVersion=2.0.0,library=native,invokerPackage=financial.xyo.client,apiPackage=financial.xyo.api,modelPackage=financial.xyo.model \
   --global-property apiTests=false,modelTests=false,apiDocs=false,modelDocs=false
 ```
 

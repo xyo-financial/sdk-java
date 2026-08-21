@@ -10,7 +10,7 @@
   <a href="https://github.com/xyo-financial/sdk-java/actions/workflows/ci.yml"><img src="https://github.com/xyo-financial/sdk-java/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI Build" /></a>
   <a href="https://github.com/xyo-financial/sdk-java/actions/workflows/release.yml"><img src="https://github.com/xyo-financial/sdk-java/actions/workflows/release.yml/badge.svg" alt="Release Pipeline" /></a>
   <img src="https://img.shields.io/badge/Java-17%2B-blue" alt="Java 17+" />
-  <img src="https://img.shields.io/badge/Maven_Central-financial.xyo%3Axyo--sdk-informational" alt="Maven Central" />
+  <img src="https://img.shields.io/badge/Maven_Central-io.github.xyo--financial%3Axyo--sdk-informational" alt="Maven Central" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License" /></a>
 </p>
 
@@ -55,7 +55,7 @@ The SDK is published to Maven Central. Add the dependency to your build configur
 
 ```xml
 <dependency>
-    <groupId>financial.xyo</groupId>
+    <groupId>io.github.xyo-financial</groupId>
     <artifactId>xyo-sdk</artifactId>
     <version>2.0.0</version>
 </dependency>
@@ -69,7 +69,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'financial.xyo:xyo-sdk:2.0.0'
+    implementation 'io.github.xyo-financial:xyo-sdk:2.0.0'
 }
 ```
 
@@ -81,7 +81,7 @@ repositories {
 }
 
 dependencies {
-    implementation("financial.xyo:xyo-sdk:2.0.0")
+    implementation("io.github.xyo-financial:xyo-sdk:2.0.0")
 }
 ```
 
