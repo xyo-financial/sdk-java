@@ -45,7 +45,7 @@ jobs:
             -i specs/openapi.yml \
             -g java \
             -o openapi \
-            --additional-properties=groupId=io.github.xyo-financial,artifactId=xyo-openapi,artifactVersion=2.0.0,library=native,invokerPackage=financial.xyo.client,apiPackage=financial.xyo.api,modelPackage=financial.xyo.model \
+            --additional-properties=groupId=io.github.xyo-financial,artifactId=xyo-openapi,artifactVersion=2.0.1,library=native,invokerPackage=financial.xyo.client,apiPackage=financial.xyo.api,modelPackage=financial.xyo.model \
             --global-property apiTests=false,modelTests=false,apiDocs=false,modelDocs=false
 
           # Remove generator noise and scaffolding files
