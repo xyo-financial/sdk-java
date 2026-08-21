@@ -43,7 +43,7 @@ Add this dependency to your project's POM:
 
 ```xml
 <dependency>
-  <groupId>financial.xyo</groupId>
+  <groupId>io.github.xyo-financial</groupId>
   <artifactId>xyo-sdk</artifactId>
   <version>1.0.0</version>
   <scope>compile</scope>
@@ -55,7 +55,7 @@ Add this dependency to your project's POM:
 Add this dependency to your project's build file:
 
 ```groovy
-compile "financial.xyo:xyo-sdk:1.0.0"
+compile "io.github.xyo-financial:xyo-sdk:1.0.0"
 ```
 
 ### Others

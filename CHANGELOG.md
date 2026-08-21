@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [2.0.0] - 2026-08-09
 
 ### Added
-- Generated OpenAPI client module (`financial.xyo:xyo-sdk:2.0.0`) based on canonical OpenAPI 3.0 specification.
+- Generated OpenAPI client module (`io.github.xyo-financial:xyo-sdk:2.0.0`) based on canonical OpenAPI 3.0 specification.
 - Deterministic OpenAPI Generator CLI setup with workflow automation (`.github/workflows/generate.yml`).
 - Java 17+ `XyoClient` wrapper around generated `EnrichmentApi` with fluent builder pattern and `Duration` timeouts.
 - Comprehensive JUnit 5 test suite with unit and boundary tests.
