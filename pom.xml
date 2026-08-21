@@ -55,7 +55,7 @@
             <configuration>
               <publishingServerId>central</publishingServerId>
               <autoPublish>true</autoPublish>
-              <waitUntil>published</waitUntil>
+              <waitUntil>uploaded</waitUntil>
             </configuration>
           </plugin>
           <plugin>
