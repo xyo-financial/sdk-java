@@ -39,7 +39,7 @@ import financial.xyo.client.ApiClient;
   APIError.JSON_PROPERTY_DETAIL,
   APIError.JSON_PROPERTY_INSTANCE
 })
-@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-08-22T13:16:43.354803+01:00[Europe/London]", comments = "Generator version: 7.24.0")
+@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-08-22T12:21:56.645866177Z[Etc/UTC]", comments = "Generator version: 7.24.0")
 public class APIError {
   public static final String JSON_PROPERTY_TYPE = "type";
   @javax.annotation.Nonnull
