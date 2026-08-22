@@ -65,11 +65,14 @@ jobs:
                  openapi/docs \
                  openapi/api
 
+          # Clean up generator test templates
+          rm -rf openapi/src/test
+
           # Clean up specs checkout so it is not committed
           rm -rf specs
 
       - name: Install generated client to local Maven cache
-        run: mvn clean install -q -DskipTests --file openapi/pom.xml
+        run: mvn clean install -q -DskipTests -Dmaven.test.skip=true --file openapi/pom.xml
 
       - name: Build and test Java SDK wrapper
         run: |
