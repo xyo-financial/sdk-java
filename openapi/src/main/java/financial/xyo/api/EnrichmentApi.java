@@ -51,7 +51,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
 
-@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-08-22T13:16:43.354803+01:00[Europe/London]", comments = "Generator version: 7.24.0")
+@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-08-23T00:03:54.981561+01:00[Europe/London]", comments = "Generator version: 7.24.0")
 public class EnrichmentApi {
   /**
    * Utility class for extending HttpRequest.Builder functionality.

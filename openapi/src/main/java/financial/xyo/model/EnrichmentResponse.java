@@ -42,7 +42,7 @@ import financial.xyo.client.ApiClient;
   EnrichmentResponse.JSON_PROPERTY_LOCATION,
   EnrichmentResponse.JSON_PROPERTY_ADDRESS
 })
-@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-08-22T13:16:43.354803+01:00[Europe/London]", comments = "Generator version: 7.24.0")
+@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-08-23T00:03:54.981561+01:00[Europe/London]", comments = "Generator version: 7.24.0")
 public class EnrichmentResponse {
   public static final String JSON_PROPERTY_MERCHANT = "merchant";
   @javax.annotation.Nonnull

@@ -349,6 +349,10 @@ class XyoClientTest {
         startTestServer(exchange -> {
             byte[] responseBytes = errorJson.getBytes(StandardCharsets.UTF_8);
             exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.getResponseHeaders().set("Retry-After", "60");
+            exchange.getResponseHeaders().set("RateLimit-Limit", "1000");
+            exchange.getResponseHeaders().set("RateLimit-Remaining", "0");
+            exchange.getResponseHeaders().set("RateLimit-Reset", "1700000000");
             exchange.sendResponseHeaders(429, responseBytes.length);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(responseBytes);
@@ -360,9 +364,13 @@ class XyoClientTest {
             client.enrichTransactionCollectionStatus("batch-123");
         });
 
-        assertEquals(ErrorCategory.HTTP, exception.getCategory());
+        assertEquals(ErrorCategory.RATE_LIMIT, exception.getCategory());
         assertEquals(429, exception.getHttpStatusCode());
         assertEquals(errorJson, exception.getResponseBody());
+        assertEquals(60L, exception.getRetryAfter());
+        assertEquals(1000L, exception.getRateLimitLimit());
+        assertEquals(0L, exception.getRateLimitRemaining());
+        assertEquals(1700000000L, exception.getRateLimitReset());
     }
 
     @Test
@@ -840,7 +848,7 @@ class XyoClientTest {
         });
 
         assertEquals(ErrorCategory.VALIDATION, ex.getCategory());
-        assertTrue(ex.getMessage().contains("apiUser must not contain CR or LF characters"));
+        assertTrue(ex.getMessage().contains("apiUser must not contain control characters"));
     }
 
     @Test
@@ -853,7 +861,7 @@ class XyoClientTest {
         });
 
         assertEquals(ErrorCategory.VALIDATION, ex.getCategory());
-        assertTrue(ex.getMessage().contains("apiUser must not contain CR or LF characters"));
+        assertTrue(ex.getMessage().contains("apiUser must not contain control characters"));
     }
 
     @Test
@@ -868,6 +876,288 @@ class XyoClientTest {
             new ClientConfig.Builder("").build();
         });
         assertTrue(ex2.getMessage().contains("apiKey or apiKeySupplier must be provided"));
+    }
+
+    @Test
+    @DisplayName("Tracing headers (X-Correlation-ID and traceparent) are correctly transmitted")
+    void testTracingHeadersTransmitted() throws IOException {
+        java.util.UUID correlationId = java.util.UUID.randomUUID();
+        String traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+
+        AtomicReference<String> capturedCorrId = new AtomicReference<>();
+        AtomicReference<String> capturedTraceparent = new AtomicReference<>();
+
+        startTestServer(exchange -> {
+            capturedCorrId.set(exchange.getRequestHeaders().getFirst("X-Correlation-ID"));
+            capturedTraceparent.set(exchange.getRequestHeaders().getFirst("traceparent"));
+            String jsonResponse = "{\"merchant\": \"Test Merchant\", \"description\": \"Desc\", \"categories\": [\"Cat\"]}";
+            byte[] resBytes = jsonResponse.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, resBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(resBytes);
+            }
+        });
+
+        client = createTestClient();
+        EnrichmentRequest request = new EnrichmentRequest("COSTA PICKUP", "GB");
+        EnrichmentResponse response = client.enrichTransaction(request, correlationId, traceparent);
+
+        assertNotNull(response);
+        assertEquals(correlationId.toString(), capturedCorrId.get());
+        assertEquals(traceparent, capturedTraceparent.get());
+    }
+
+    @Test
+    @DisplayName("RequestOptions configures correlationId, traceparent, and apiUser")
+    void testRequestOptionsUsage() throws IOException {
+        java.util.UUID correlationId = java.util.UUID.randomUUID();
+        String traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+        String apiUser = "user-123";
+
+        AtomicReference<String> capturedCorrId = new AtomicReference<>();
+        AtomicReference<String> capturedTraceparent = new AtomicReference<>();
+        AtomicReference<String> capturedApiUser = new AtomicReference<>();
+
+        startTestServer(exchange -> {
+            capturedCorrId.set(exchange.getRequestHeaders().getFirst("X-Correlation-ID"));
+            capturedTraceparent.set(exchange.getRequestHeaders().getFirst("traceparent"));
+            capturedApiUser.set(exchange.getRequestHeaders().getFirst("x-api-user"));
+            String jsonResponse = "{\"id\": \"batch-999\", \"link\": \"https://api.xyo.financial/v1/enrich/bulk/batch-999\"}";
+            byte[] resBytes = jsonResponse.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.sendResponseHeaders(200, resBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(resBytes);
+            }
+        });
+
+        client = createTestClient();
+        RequestOptions options = RequestOptions.builder()
+                .correlationId(correlationId)
+                .traceparent(traceparent)
+                .apiUser(apiUser)
+                .build();
+
+        EnrichTransactionCollectionResponse response = client.enrichTransactionCollection(
+                List.of(new EnrichmentRequest("TESCO", "GB")),
+                options
+        );
+
+        assertNotNull(response);
+        assertEquals("batch-999", response.getId());
+        assertEquals(correlationId.toString(), capturedCorrId.get());
+        assertEquals(traceparent, capturedTraceparent.get());
+        assertEquals(apiUser, capturedApiUser.get());
+    }
+
+    @Test
+    @DisplayName("Submitting bulk collection exceeding 50,000 items throws VALIDATION exception")
+    void testEnrichTransactionCollection_ExceedsMaxBatchSize() {
+        client = createTestClient();
+        EnrichmentRequest dummyReq = new EnrichmentRequest("TEST", "US");
+        List<EnrichmentRequest> oversizedList = Collections.nCopies(50001, dummyReq);
+
+        XyoException ex = assertThrows(XyoException.class, () -> {
+            client.enrichTransactionCollection(oversizedList);
+        });
+
+        assertEquals(ErrorCategory.VALIDATION, ex.getCategory());
+        assertTrue(ex.getMessage().contains("must not exceed 50,000 items"));
+    }
+
+    @Test
+    @DisplayName("Traceparent header containing CRLF characters throws VALIDATION exception")
+    void testTraceparentValidation_CrlfInjectionThrows() {
+        client = createTestClient();
+        String crlfTraceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01\r\nX-Injected: evil";
+        EnrichmentRequest request = new EnrichmentRequest("STARBUCKS", "US");
+
+        XyoException ex1 = assertThrows(XyoException.class, () -> {
+            client.enrichTransaction(request, null, crlfTraceparent);
+        });
+        assertEquals(ErrorCategory.VALIDATION, ex1.getCategory());
+        assertEquals("traceparent must strictly conform to W3C format", ex1.getMessage());
+
+        XyoException ex2 = assertThrows(XyoException.class, () -> {
+            client.enrichTransactionCollection(List.of(request), null, null, crlfTraceparent);
+        });
+        assertEquals(ErrorCategory.VALIDATION, ex2.getCategory());
+        assertEquals("traceparent must strictly conform to W3C format", ex2.getMessage());
+
+        XyoException ex3 = assertThrows(XyoException.class, () -> {
+            client.enrichTransactionCollectionStatus("batch-123", null, null, crlfTraceparent);
+        });
+        assertEquals(ErrorCategory.VALIDATION, ex3.getCategory());
+        assertEquals("traceparent must strictly conform to W3C format", ex3.getMessage());
+
+        XyoException ex4 = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("/v1/enrich/bulk/download/batch-123", null, crlfTraceparent);
+        });
+        assertEquals(ErrorCategory.VALIDATION, ex4.getCategory());
+        assertEquals("traceparent must strictly conform to W3C format", ex4.getMessage());
+    }
+
+    @Test
+    @DisplayName("Malformed traceparent header format throws VALIDATION exception")
+    void testTraceparentValidation_MalformedTraceparentThrows() {
+        client = createTestClient();
+        EnrichmentRequest request = new EnrichmentRequest("STARBUCKS", "US");
+
+        List<String> malformedTraceparents = List.of(
+                "invalid",
+                "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7", // missing flags component
+                "00-4BF92F3577B34DA6A3CE929D0E0E4736-00F067AA0BA902B7-01", // uppercase hex characters
+                "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01-extra", // extra trailing component
+                "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-0g", // non-hex character 'g'
+                "" // empty string
+        );
+
+        for (String invalidTp : malformedTraceparents) {
+            XyoException ex = assertThrows(XyoException.class, () -> {
+                client.enrichTransaction(request, null, invalidTp);
+            }, "Expected validation error for traceparent: " + invalidTp);
+
+            assertEquals(ErrorCategory.VALIDATION, ex.getCategory());
+            assertEquals("traceparent must strictly conform to W3C format", ex.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("Error body exceeding 1,000 characters is truncated in exception message to prevent log bloat")
+    void testErrorBodyTruncation() throws IOException {
+        String longErrorBody = "X".repeat(1500);
+
+        startTestServer(exchange -> {
+            byte[] resBytes = longErrorBody.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "text/plain");
+            exchange.sendResponseHeaders(500, resBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(resBytes);
+            }
+        });
+
+        client = createTestClient();
+        EnrichmentRequest request = new EnrichmentRequest("Costa", "GB");
+
+        XyoException exception = assertThrows(XyoException.class, () -> {
+            client.enrichTransaction(request);
+        });
+
+        assertEquals(ErrorCategory.HTTP, exception.getCategory());
+        assertEquals(500, exception.getHttpStatusCode());
+        assertEquals(longErrorBody, exception.getResponseBody());
+        assertTrue(exception.getMessage().contains("... [truncated]"));
+        assertTrue(exception.getMessage().contains("X".repeat(1000)));
+        assertFalse(exception.getMessage().contains("X".repeat(1001)));
+    }
+
+    @Test
+    void testRequestOptions_EqualsHashCodeToString() {
+        java.util.UUID uuid1 = java.util.UUID.randomUUID();
+        java.util.UUID uuid2 = java.util.UUID.randomUUID();
+
+        RequestOptions opt1 = RequestOptions.builder()
+                .correlationId(uuid1)
+                .traceparent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+                .apiUser("user1")
+                .build();
+
+        RequestOptions opt2 = RequestOptions.builder()
+                .correlationId(uuid1)
+                .traceparent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+                .apiUser("user1")
+                .build();
+
+        RequestOptions opt3 = RequestOptions.builder()
+                .correlationId(uuid2)
+                .traceparent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+                .apiUser("user1")
+                .build();
+
+        assertEquals(opt1, opt2);
+        assertEquals(opt1.hashCode(), opt2.hashCode());
+        assertNotEquals(opt1, opt3);
+        assertNotEquals(opt1, null);
+        assertNotEquals(opt1, "other object");
+        assertEquals(opt1, opt1);
+
+        String str = opt1.toString();
+        assertTrue(str.contains("RequestOptions"));
+        assertTrue(str.contains(uuid1.toString()));
+        assertTrue(str.contains("user1"));
+    }
+
+    @Test
+    void testRetryAfterHeader_Rfc1123DateParsing() throws IOException {
+        java.time.ZonedDateTime futureDate = java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC).plusSeconds(120);
+        String rfc1123Str = java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(futureDate);
+
+        startTestServer(exchange -> {
+            exchange.getResponseHeaders().set("Retry-After", rfc1123Str);
+            exchange.sendResponseHeaders(429, 0);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(new byte[0]);
+            }
+        });
+
+        client = createTestClient();
+        EnrichmentRequest request = new EnrichmentRequest("Costa", "GB");
+
+        XyoException exception = assertThrows(XyoException.class, () -> {
+            client.enrichTransaction(request);
+        });
+
+        assertEquals(ErrorCategory.RATE_LIMIT, exception.getCategory());
+        assertNotNull(exception.getRetryAfter());
+        assertTrue(exception.getRetryAfter() > 0 && exception.getRetryAfter() <= 120,
+                "retryAfter should be calculated from RFC 1123 header, expected ~120s but got " + exception.getRetryAfter());
+    }
+
+    @Test
+    void testS3EndpointPattern_GlobalAndDualstack() throws Exception {
+        client = createTestClient();
+
+        XyoException ex1 = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://s3.amazonaws.com/mybucket/file.tar.gz");
+        });
+        assertFalse(ex1.getMessage().contains("is not permitted for secure archive downloads"),
+                "s3.amazonaws.com should be permitted by ALLOWED_S3_PATTERN");
+
+        XyoException ex2 = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://bucket.s3.amazonaws.com/file.tar.gz");
+        });
+        assertFalse(ex2.getMessage().contains("is not permitted for secure archive downloads"),
+                "bucket.s3.amazonaws.com should be permitted by ALLOWED_S3_PATTERN");
+
+        XyoException ex3 = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://bucket.s3.dualstack.us-east-1.amazonaws.com/file.tar.gz");
+        });
+        assertFalse(ex3.getMessage().contains("is not permitted for secure archive downloads"),
+                "bucket.s3.dualstack.us-east-1.amazonaws.com should be permitted by ALLOWED_S3_PATTERN");
+
+        XyoException ex4 = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://unauthorized.domain.com/file.tar.gz");
+        });
+        assertTrue(ex4.getMessage().contains("Domain 'unauthorized.domain.com' is not permitted for secure archive downloads"));
+    }
+
+    @Test
+    void testApiException_InterruptedException_ReassertsInterrupt() {
+        financial.xyo.client.ApiException apiEx = new financial.xyo.client.ApiException(new InterruptedException("interrupted"));
+
+        Thread.interrupted();
+
+        try {
+            java.lang.reflect.Method method = XyoClient.class.getDeclaredMethod("handleApiException", financial.xyo.client.ApiException.class);
+            method.setAccessible(true);
+            XyoClient clientObj = createTestClient();
+            method.invoke(clientObj, apiEx);
+        } catch (Exception ignored) {
+        }
+
+        assertTrue(Thread.currentThread().isInterrupted(), "Thread interrupt flag should be set");
+        Thread.interrupted();
     }
 
     private static byte[] createTarGzArchive(Map<String, String> files) throws IOException {

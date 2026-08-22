@@ -14,5 +14,8 @@ public enum ErrorCategory {
     HTTP,
     
     /** Failures during JSON serialization or deserialization processes. */
-    PARSING
+    PARSING,
+
+    /** Rate limit exceeded (HTTP 429 status code). */
+    RATE_LIMIT
 }
