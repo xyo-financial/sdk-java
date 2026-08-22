@@ -26,7 +26,7 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.Set;
 
-@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-08-22T13:16:43.354803+01:00[Europe/London]", comments = "Generator version: 7.24.0")
+@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-08-22T12:29:22.110925464Z[Etc/UTC]", comments = "Generator version: 7.24.0")
 public class JSON {
   private ObjectMapper mapper;
 
@@ -82,7 +82,7 @@ public class JSON {
   /**
    * Helper class to register the discriminator mappings.
    */
-  @javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-08-22T13:16:43.354803+01:00[Europe/London]", comments = "Generator version: 7.24.0")
+  @javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-08-22T12:29:22.110925464Z[Etc/UTC]", comments = "Generator version: 7.24.0")
   private static class ClassDiscriminatorMapping {
     // The model class name.
     Class<?> modelClass;
