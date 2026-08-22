@@ -966,6 +966,92 @@ class XyoClientTest {
         assertTrue(ex.getMessage().contains("must not exceed 50,000 items"));
     }
 
+    @Test
+    @DisplayName("Traceparent header containing CRLF characters throws VALIDATION exception")
+    void testTraceparentValidation_CrlfInjectionThrows() {
+        client = createTestClient();
+        String crlfTraceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01\r\nX-Injected: evil";
+        EnrichmentRequest request = new EnrichmentRequest("STARBUCKS", "US");
+
+        XyoException ex1 = assertThrows(XyoException.class, () -> {
+            client.enrichTransaction(request, null, crlfTraceparent);
+        });
+        assertEquals(ErrorCategory.VALIDATION, ex1.getCategory());
+        assertEquals("traceparent must strictly conform to W3C format", ex1.getMessage());
+
+        XyoException ex2 = assertThrows(XyoException.class, () -> {
+            client.enrichTransactionCollection(List.of(request), null, null, crlfTraceparent);
+        });
+        assertEquals(ErrorCategory.VALIDATION, ex2.getCategory());
+        assertEquals("traceparent must strictly conform to W3C format", ex2.getMessage());
+
+        XyoException ex3 = assertThrows(XyoException.class, () -> {
+            client.enrichTransactionCollectionStatus("batch-123", null, null, crlfTraceparent);
+        });
+        assertEquals(ErrorCategory.VALIDATION, ex3.getCategory());
+        assertEquals("traceparent must strictly conform to W3C format", ex3.getMessage());
+
+        XyoException ex4 = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("/v1/enrich/bulk/download/batch-123", null, crlfTraceparent);
+        });
+        assertEquals(ErrorCategory.VALIDATION, ex4.getCategory());
+        assertEquals("traceparent must strictly conform to W3C format", ex4.getMessage());
+    }
+
+    @Test
+    @DisplayName("Malformed traceparent header format throws VALIDATION exception")
+    void testTraceparentValidation_MalformedTraceparentThrows() {
+        client = createTestClient();
+        EnrichmentRequest request = new EnrichmentRequest("STARBUCKS", "US");
+
+        List<String> malformedTraceparents = List.of(
+                "invalid",
+                "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7", // missing flags component
+                "00-4BF92F3577B34DA6A3CE929D0E0E4736-00F067AA0BA902B7-01", // uppercase hex characters
+                "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01-extra", // extra trailing component
+                "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-0g", // non-hex character 'g'
+                "" // empty string
+        );
+
+        for (String invalidTp : malformedTraceparents) {
+            XyoException ex = assertThrows(XyoException.class, () -> {
+                client.enrichTransaction(request, null, invalidTp);
+            }, "Expected validation error for traceparent: " + invalidTp);
+
+            assertEquals(ErrorCategory.VALIDATION, ex.getCategory());
+            assertEquals("traceparent must strictly conform to W3C format", ex.getMessage());
+        }
+    }
+
+    @Test
+    @DisplayName("Error body exceeding 1,000 characters is truncated in exception message to prevent log bloat")
+    void testErrorBodyTruncation() throws IOException {
+        String longErrorBody = "X".repeat(1500);
+
+        startTestServer(exchange -> {
+            byte[] resBytes = longErrorBody.getBytes(StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "text/plain");
+            exchange.sendResponseHeaders(500, resBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(resBytes);
+            }
+        });
+
+        client = createTestClient();
+        EnrichmentRequest request = new EnrichmentRequest("Costa", "GB");
+
+        XyoException exception = assertThrows(XyoException.class, () -> {
+            client.enrichTransaction(request);
+        });
+
+        assertEquals(ErrorCategory.HTTP, exception.getCategory());
+        assertEquals(500, exception.getHttpStatusCode());
+        assertEquals(longErrorBody, exception.getResponseBody());
+        assertTrue(exception.getMessage().contains("... [truncated]"));
+        assertTrue(exception.getMessage().contains("X".repeat(1000)));
+        assertFalse(exception.getMessage().contains("X".repeat(1001)));
+    }
+
     private static byte[] createTarGzArchive(Map<String, String> files) throws IOException {
         ByteArrayOutputStream tarBaos = new ByteArrayOutputStream();
         for (Map.Entry<String, String> entry : files.entrySet()) {

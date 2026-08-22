@@ -21,6 +21,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
 
 import javax.net.ssl.SSLParameters;
@@ -34,6 +35,9 @@ import java.util.function.Supplier;
  */
 public class XyoClient implements AutoCloseable {
 
+    private static final Pattern TRACEPARENT_PATTERN =
+            Pattern.compile("^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$");
+
     private final Supplier<String> apiKeySupplier;
     private final String apiBaseUrl;
     private final boolean allowInsecureHttp;
@@ -42,6 +46,12 @@ public class XyoClient implements AutoCloseable {
     private final Duration requestTimeout;
     private final ObjectMapper objectMapper;
     private final EnrichmentApi enrichmentApi;
+
+    private static void validateTraceparent(String traceparent) {
+        if (traceparent != null && !TRACEPARENT_PATTERN.matcher(traceparent).matches()) {
+            throw new XyoException(ErrorCategory.VALIDATION, "traceparent must strictly conform to W3C format");
+        }
+    }
 
     /**
      * Constructs a new instance of XyoClient using the given configuration properties.
@@ -169,9 +179,7 @@ public class XyoClient implements AutoCloseable {
         if (request == null) {
             throw new XyoException(ErrorCategory.VALIDATION, "request must not be null");
         }
-        if (traceparent != null && (traceparent.contains("\r") || traceparent.contains("\n"))) {
-            throw new XyoException(ErrorCategory.VALIDATION, "traceparent must not contain CR or LF characters");
-        }
+        validateTraceparent(traceparent);
         request.validate();
 
         financial.xyo.model.EnrichmentRequest apiReq = new financial.xyo.model.EnrichmentRequest();
@@ -266,9 +274,7 @@ public class XyoClient implements AutoCloseable {
         if (apiUser != null && (apiUser.contains("\r") || apiUser.contains("\n"))) {
             throw new XyoException(ErrorCategory.VALIDATION, "apiUser must not contain CR or LF characters");
         }
-        if (traceparent != null && (traceparent.contains("\r") || traceparent.contains("\n"))) {
-            throw new XyoException(ErrorCategory.VALIDATION, "traceparent must not contain CR or LF characters");
-        }
+        validateTraceparent(traceparent);
         if (requests == null || requests.isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "requests list must not be null or empty");
         }
@@ -368,9 +374,7 @@ public class XyoClient implements AutoCloseable {
         if (apiUser != null && (apiUser.contains("\r") || apiUser.contains("\n"))) {
             throw new XyoException(ErrorCategory.VALIDATION, "apiUser must not contain CR or LF characters");
         }
-        if (traceparent != null && (traceparent.contains("\r") || traceparent.contains("\n"))) {
-            throw new XyoException(ErrorCategory.VALIDATION, "traceparent must not contain CR or LF characters");
-        }
+        validateTraceparent(traceparent);
         if (id == null || id.isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "id must not be null or empty");
         }
@@ -435,9 +439,7 @@ public class XyoClient implements AutoCloseable {
         if (downloadUrl == null || downloadUrl.trim().isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "downloadUrl must not be null or empty");
         }
-        if (traceparent != null && (traceparent.contains("\r") || traceparent.contains("\n"))) {
-            throw new XyoException(ErrorCategory.VALIDATION, "traceparent must not contain CR or LF characters");
-        }
+        validateTraceparent(traceparent);
 
         URI uri;
         try {
@@ -517,23 +519,7 @@ public class XyoClient implements AutoCloseable {
                 }
             } catch (Exception ignored) {
             }
-            ErrorCategory category = (statusCode == 429) ? ErrorCategory.RATE_LIMIT : ErrorCategory.HTTP;
-            Long retryAfter = parseLongHeader(response.headers(), "Retry-After");
-            Long rateLimitLimit = parseLongHeader(response.headers(), "RateLimit-Limit", "X-RateLimit-Limit");
-            Long rateLimitRemaining = parseLongHeader(response.headers(), "RateLimit-Remaining", "X-RateLimit-Remaining");
-            Long rateLimitReset = parseLongHeader(response.headers(), "RateLimit-Reset", "X-RateLimit-Reset");
-
-            throw new XyoException(
-                    category,
-                    "XYO API returned status code " + statusCode + (errorBody.isEmpty() ? "" : ": " + errorBody),
-                    statusCode,
-                    0,
-                    errorBody,
-                    retryAfter,
-                    rateLimitLimit,
-                    rateLimitRemaining,
-                    rateLimitReset
-            );
+            throw createHttpException(statusCode, errorBody, response.headers(), null);
         }
 
         // Validate Content-Type header to diagnose intermediate proxy/WAF challenge pages
@@ -676,27 +662,38 @@ public class XyoClient implements AutoCloseable {
         // No-op for default HttpClient; enables try-with-resources and lifecycle management in enterprise containers
     }
 
-    private XyoException handleApiException(ApiException e) {
-        if (e.getCode() > 0) {
-            ErrorCategory category = (e.getCode() == 429) ? ErrorCategory.RATE_LIMIT : ErrorCategory.HTTP;
-            HttpHeaders headers = e.getResponseHeaders();
-            Long retryAfter = parseLongHeader(headers, "Retry-After");
-            Long rateLimitLimit = parseLongHeader(headers, "RateLimit-Limit", "X-RateLimit-Limit");
-            Long rateLimitRemaining = parseLongHeader(headers, "RateLimit-Remaining", "X-RateLimit-Remaining");
-            Long rateLimitReset = parseLongHeader(headers, "RateLimit-Reset", "X-RateLimit-Reset");
+    private XyoException createHttpException(int statusCode, String errorBody, HttpHeaders headers, Throwable cause) {
+        ErrorCategory category = (statusCode == 429) ? ErrorCategory.RATE_LIMIT : ErrorCategory.HTTP;
+        Long retryAfter = parseLongHeader(headers, "Retry-After");
+        Long rateLimitLimit = parseLongHeader(headers, "RateLimit-Limit", "X-RateLimit-Limit");
+        Long rateLimitRemaining = parseLongHeader(headers, "RateLimit-Remaining", "X-RateLimit-Remaining");
+        Long rateLimitReset = parseLongHeader(headers, "RateLimit-Reset", "X-RateLimit-Reset");
 
-            return new XyoException(
+        String displayBody = errorBody;
+        if (displayBody != null && displayBody.length() > 1000) {
+            displayBody = displayBody.substring(0, 1000) + "... [truncated]";
+        }
+
+        String message = "XYO API returned status code " + statusCode
+                + ((displayBody == null || displayBody.isEmpty()) ? "" : ": " + displayBody);
+
+        return new XyoException(
                 category,
-                "XYO API returned status code " + e.getCode() + ": " + e.getResponseBody(),
-                e.getCause(),
-                e.getCode(),
+                message,
+                cause,
+                statusCode,
                 0,
-                e.getResponseBody(),
+                errorBody,
                 retryAfter,
                 rateLimitLimit,
                 rateLimitRemaining,
                 rateLimitReset
-            );
+        );
+    }
+
+    private XyoException handleApiException(ApiException e) {
+        if (e.getCode() > 0) {
+            return createHttpException(e.getCode(), e.getResponseBody(), e.getResponseHeaders(), e.getCause());
         }
         if (e.getCause() instanceof com.fasterxml.jackson.core.JsonProcessingException
                 || (e.getMessage() != null && e.getMessage().contains("JSON"))) {
