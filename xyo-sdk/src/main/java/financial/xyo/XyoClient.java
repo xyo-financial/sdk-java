@@ -38,6 +38,9 @@ public class XyoClient implements AutoCloseable {
     private static final Pattern TRACEPARENT_PATTERN =
             Pattern.compile("^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$");
 
+    private static final Pattern ALLOWED_S3_PATTERN =
+            Pattern.compile("^([a-z0-9][a-z0-9\\-]{1,61}[a-z0-9]\\.)?s3[.-][a-z0-9-]+\\.amazonaws\\.com$");
+
     private final Supplier<String> apiKeySupplier;
     private final String apiBaseUrl;
     private final boolean allowInsecureHttp;
@@ -130,9 +133,10 @@ public class XyoClient implements AutoCloseable {
         // Configure dynamic Authorization Bearer token header interceptor (NIST SP 800-57 key rotation support)
         apiClient.setRequestInterceptor(builder -> {
             String key = this.apiKeySupplier.get();
-            if (key != null && !key.isEmpty()) {
-                builder.header("Authorization", "Bearer " + key);
+            if (key == null || key.isEmpty()) {
+                throw new IllegalStateException("API key supplier returned null; cannot authenticate request");
             }
+            builder.header("Authorization", "Bearer " + key);
         });
 
         this.httpClient = apiClient.getHttpClient();
@@ -202,10 +206,7 @@ public class XyoClient implements AutoCloseable {
         } catch (ApiException e) {
             throw handleApiException(e);
         } catch (Exception e) {
-            if (e instanceof XyoException) {
-                throw (XyoException) e;
-            }
-            throw new XyoException(ErrorCategory.TRANSPORT, e.getMessage(), e);
+            throw wrapUnexpected(e);
         }
     }
 
@@ -271,8 +272,8 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if validation checks fail or the server returns an error response
      */
     public EnrichTransactionCollectionResponse enrichTransactionCollection(List<EnrichmentRequest> requests, String apiUser, UUID correlationId, String traceparent) {
-        if (apiUser != null && (apiUser.contains("\r") || apiUser.contains("\n"))) {
-            throw new XyoException(ErrorCategory.VALIDATION, "apiUser must not contain CR or LF characters");
+        if (apiUser != null && apiUser.chars().anyMatch(c -> (c < 0x20 && c != '\t') || c == 0x7F)) {
+            throw new XyoException(ErrorCategory.VALIDATION, "apiUser must not contain control characters");
         }
         validateTraceparent(traceparent);
         if (requests == null || requests.isEmpty()) {
@@ -302,10 +303,7 @@ public class XyoClient implements AutoCloseable {
         } catch (ApiException e) {
             throw handleApiException(e);
         } catch (Exception e) {
-            if (e instanceof XyoException) {
-                throw (XyoException) e;
-            }
-            throw new XyoException(ErrorCategory.TRANSPORT, e.getMessage(), e);
+            throw wrapUnexpected(e);
         }
     }
 
@@ -371,8 +369,8 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if parsing fails, trace status lookup returns bad code, or required elements are missing
      */
     public EnrichmentCollectionStatus enrichTransactionCollectionStatus(String id, String apiUser, UUID correlationId, String traceparent) {
-        if (apiUser != null && (apiUser.contains("\r") || apiUser.contains("\n"))) {
-            throw new XyoException(ErrorCategory.VALIDATION, "apiUser must not contain CR or LF characters");
+        if (apiUser != null && apiUser.chars().anyMatch(c -> (c < 0x20 && c != '\t') || c == 0x7F)) {
+            throw new XyoException(ErrorCategory.VALIDATION, "apiUser must not contain control characters");
         }
         validateTraceparent(traceparent);
         if (id == null || id.isEmpty()) {
@@ -393,10 +391,7 @@ public class XyoClient implements AutoCloseable {
         } catch (IllegalArgumentException e) {
             throw new XyoException(ErrorCategory.PARSING, e.getMessage(), e);
         } catch (Exception e) {
-            if (e instanceof XyoException) {
-                throw (XyoException) e;
-            }
-            throw new XyoException(ErrorCategory.TRANSPORT, e.getMessage(), e);
+            throw wrapUnexpected(e);
         }
     }
 
@@ -480,7 +475,7 @@ public class XyoClient implements AutoCloseable {
 
         URI baseUri = URI.create(this.apiBaseUrl);
         boolean isApiHost = (baseUri.getHost() != null && baseUri.getHost().equalsIgnoreCase(uri.getHost()));
-        boolean isS3 = (uri.getHost() != null && uri.getHost().toLowerCase().endsWith(".amazonaws.com"));
+        boolean isS3 = (uri.getHost() != null && ALLOWED_S3_PATTERN.matcher(uri.getHost().toLowerCase()).matches());
 
         if (!isApiHost && !isS3) {
             throw new XyoException(ErrorCategory.VALIDATION, "Domain '" + uri.getHost() + "' is not permitted for secure archive downloads");
@@ -515,7 +510,8 @@ public class XyoClient implements AutoCloseable {
             String errorBody = "";
             try (InputStream is = response.body()) {
                 if (is != null) {
-                    errorBody = new String(is.readAllBytes(), StandardCharsets.UTF_8);
+                    byte[] bytes = is.readNBytes(64 * 1024); // 64 KB cap on error bodies
+                    errorBody = new String(bytes, StandardCharsets.UTF_8);
                 }
             } catch (Exception ignored) {
             }
@@ -689,6 +685,13 @@ public class XyoClient implements AutoCloseable {
                 rateLimitRemaining,
                 rateLimitReset
         );
+    }
+
+    private XyoException wrapUnexpected(Exception e) {
+        if (e instanceof XyoException) {
+            return (XyoException) e;
+        }
+        return new XyoException(ErrorCategory.TRANSPORT, e.getMessage(), e);
     }
 
     private XyoException handleApiException(ApiException e) {
