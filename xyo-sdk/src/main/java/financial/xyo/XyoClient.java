@@ -146,7 +146,7 @@ public class XyoClient implements AutoCloseable {
         apiReq.setCountryCode(request.getCountryCode());
 
         try {
-            financial.xyo.model.EnrichmentResponse apiRes = enrichmentApi.enrichTransaction(apiReq);
+            financial.xyo.model.EnrichmentResponse apiRes = enrichmentApi.enrichTransaction(apiReq, null, null);
             if (apiRes == null) {
                 throw new XyoException(ErrorCategory.PARSING, "Enrichment API returned null response");
             }
@@ -207,7 +207,7 @@ public class XyoClient implements AutoCloseable {
         }
 
         try {
-            financial.xyo.model.EnrichTransactionCollectionResponse apiRes = enrichmentApi.enrichTransactions(apiUser, apiReqList);
+            financial.xyo.model.EnrichTransactionCollectionResponse apiRes = enrichmentApi.enrichTransactions(apiReqList, apiUser, null, null);
             if (apiRes == null) {
                 throw new XyoException(ErrorCategory.PARSING, "Enrichment API returned null response");
             }
@@ -249,7 +249,7 @@ public class XyoClient implements AutoCloseable {
             throw new XyoException(ErrorCategory.VALIDATION, "id must not be null or empty");
         }
         try {
-            financial.xyo.model.EnrichmentCollectionStatusResponse apiRes = enrichmentApi.getEnrichmentStatus(id, apiUser);
+            financial.xyo.model.EnrichmentCollectionStatusResponse apiRes = enrichmentApi.getEnrichmentStatus(id, apiUser, null, null);
             if (apiRes == null || apiRes.getStatus() == null) {
                 throw new XyoException(ErrorCategory.PARSING, "Response is missing the required 'status' key");
             }

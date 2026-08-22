@@ -1,10 +1,10 @@
-# xyo-sdk
+# xyo-openapi
 
 XYO RESTful Transaction Enrichment API
 
-- API version: 1.0.0
+- API version: 2.0.0
 
-- Build date: 2026-08-08T15:08:05.929904+01:00[Europe/London]
+- Build date: 2026-08-22T13:16:43.354803+01:00[Europe/London]
 
 - Generator version: 7.24.0
 
@@ -44,8 +44,8 @@ Add this dependency to your project's POM:
 ```xml
 <dependency>
   <groupId>io.github.xyo-financial</groupId>
-  <artifactId>xyo-sdk</artifactId>
-  <version>1.0.0</version>
+  <artifactId>xyo-openapi</artifactId>
+  <version>2.0.1</version>
   <scope>compile</scope>
 </dependency>
 ```
@@ -55,7 +55,7 @@ Add this dependency to your project's POM:
 Add this dependency to your project's build file:
 
 ```groovy
-compile "io.github.xyo-financial:xyo-sdk:1.0.0"
+compile "io.github.xyo-financial:xyo-openapi:2.0.1"
 ```
 
 ### Others
@@ -68,7 +68,7 @@ mvn clean package
 
 Then manually install the following JARs:
 
-- `target/xyo-sdk-1.0.0.jar`
+- `target/xyo-openapi-2.0.1.jar`
 - `target/lib/*.jar`
 
 ## Getting Started
@@ -88,9 +88,11 @@ public class EnrichmentApiExample {
         // Configure clients using the `defaultClient` object, such as
         // overriding the host and port, timeout, etc.
         EnrichmentApi apiInstance = new EnrichmentApi(defaultClient);
-        EnrichmentRequest enrichmentRequest = new EnrichmentRequest(); // EnrichmentRequest | 
+        EnrichmentRequest enrichmentRequest = new EnrichmentRequest(); // EnrichmentRequest | Transaction enrichment request payload containing payment text and ISO-3166-1 alpha-2 country code.
+        UUID xCorrelationID = UUID.fromString("9b1deb4d-3b7d-4bad-9bdd-2b0d7b3dcb6d"); // UUID | Unique caller correlation identifier (UUIDv4) for distributed tracing across microservice boundaries.
+        String traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"; // String | Standard W3C TraceContext header (version-trace_id-parent_id-trace_flags) for distributed APM tracing.
         try {
-            EnrichmentResponse result = apiInstance.enrichTransaction(enrichmentRequest);
+            EnrichmentResponse result = apiInstance.enrichTransaction(enrichmentRequest, xCorrelationID, traceparent);
             System.out.println(result);
         } catch (ApiException e) {
             System.err.println("Exception when calling EnrichmentApi#enrichTransaction");
@@ -138,7 +140,7 @@ Authentication schemes defined for the API:
 ### BearerAuth
 
 
-- **Type**: HTTP Bearer Token authentication
+- **Type**: HTTP Bearer Token authentication (JWT)
 
 
 ## Recommendation
