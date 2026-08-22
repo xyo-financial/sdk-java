@@ -848,7 +848,7 @@ class XyoClientTest {
         });
 
         assertEquals(ErrorCategory.VALIDATION, ex.getCategory());
-        assertTrue(ex.getMessage().contains("apiUser must not contain CR or LF characters"));
+        assertTrue(ex.getMessage().contains("apiUser must not contain control characters"));
     }
 
     @Test
@@ -861,7 +861,7 @@ class XyoClientTest {
         });
 
         assertEquals(ErrorCategory.VALIDATION, ex.getCategory());
-        assertTrue(ex.getMessage().contains("apiUser must not contain CR or LF characters"));
+        assertTrue(ex.getMessage().contains("apiUser must not contain control characters"));
     }
 
     @Test

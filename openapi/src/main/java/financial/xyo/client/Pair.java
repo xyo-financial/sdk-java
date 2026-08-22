@@ -13,7 +13,7 @@
 
 package financial.xyo.client;
 
-@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-08-22T12:29:22.110925464Z[Etc/UTC]", comments = "Generator version: 7.24.0")
+@javax.annotation.Generated(value = "org.openapitools.codegen.languages.JavaClientCodegen", date = "2026-08-23T00:03:54.981561+01:00[Europe/London]", comments = "Generator version: 7.24.0")
 public class Pair {
   private final String name;
   private final String value;
