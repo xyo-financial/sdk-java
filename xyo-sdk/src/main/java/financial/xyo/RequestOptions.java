@@ -69,6 +69,30 @@ public class RequestOptions {
         return apiUser;
     }
 
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        RequestOptions that = (RequestOptions) o;
+        return java.util.Objects.equals(correlationId, that.correlationId) &&
+               java.util.Objects.equals(traceparent, that.traceparent) &&
+               java.util.Objects.equals(apiUser, that.apiUser);
+    }
+
+    @Override
+    public int hashCode() {
+        return java.util.Objects.hash(correlationId, traceparent, apiUser);
+    }
+
+    @Override
+    public String toString() {
+        return "RequestOptions{" +
+                "correlationId=" + correlationId +
+                ", traceparent='" + traceparent + '\'' +
+                ", apiUser='" + apiUser + '\'' +
+                '}';
+    }
+
     /**
      * Creates a new Builder instance for constructing RequestOptions.
      * 

@@ -18,6 +18,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
@@ -39,7 +43,7 @@ public class XyoClient implements AutoCloseable {
             Pattern.compile("^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$");
 
     private static final Pattern ALLOWED_S3_PATTERN =
-            Pattern.compile("^([a-z0-9][a-z0-9\\-]{1,61}[a-z0-9]\\.)?s3[.-][a-z0-9-]+\\.amazonaws\\.com$");
+            Pattern.compile("^([a-z0-9][a-z0-9\\-]{1,61}[a-z0-9]\\.)?s3([.-]([a-z0-9-]+|dualstack[.-][a-z0-9-]+|accelerate|fips[.-][a-z0-9-]+))?\\.amazonaws\\.com$");
 
     private final Supplier<String> apiKeySupplier;
     private final String apiBaseUrl;
@@ -660,7 +664,7 @@ public class XyoClient implements AutoCloseable {
 
     private XyoException createHttpException(int statusCode, String errorBody, HttpHeaders headers, Throwable cause) {
         ErrorCategory category = (statusCode == 429) ? ErrorCategory.RATE_LIMIT : ErrorCategory.HTTP;
-        Long retryAfter = parseLongHeader(headers, "Retry-After");
+        Long retryAfter = parseRetryAfterHeader(headers);
         Long rateLimitLimit = parseLongHeader(headers, "RateLimit-Limit", "X-RateLimit-Limit");
         Long rateLimitRemaining = parseLongHeader(headers, "RateLimit-Remaining", "X-RateLimit-Remaining");
         Long rateLimitReset = parseLongHeader(headers, "RateLimit-Reset", "X-RateLimit-Reset");
@@ -695,6 +699,9 @@ public class XyoClient implements AutoCloseable {
     }
 
     private XyoException handleApiException(ApiException e) {
+        if (e.getCause() instanceof InterruptedException) {
+            Thread.currentThread().interrupt();
+        }
         if (e.getCode() > 0) {
             return createHttpException(e.getCode(), e.getResponseBody(), e.getResponseHeaders(), e.getCause());
         }
@@ -703,6 +710,28 @@ public class XyoClient implements AutoCloseable {
             return new XyoException(ErrorCategory.PARSING, "Failed to parse JSON: " + e.getMessage(), e);
         }
         return new XyoException(ErrorCategory.TRANSPORT, e.getMessage(), e);
+    }
+
+    private Long parseRetryAfterHeader(HttpHeaders headers) {
+        if (headers == null) {
+            return null;
+        }
+        java.util.Optional<String> val = headers.firstValue("Retry-After");
+        if (!val.isPresent() || val.get().trim().isEmpty()) {
+            return null;
+        }
+        String trimmed = val.get().trim();
+        try {
+            return Long.parseLong(trimmed);
+        } catch (NumberFormatException e) {
+            try {
+                ZonedDateTime zdt = ZonedDateTime.parse(trimmed, DateTimeFormatter.RFC_1123_DATE_TIME);
+                long seconds = Duration.between(Instant.now(), zdt.toInstant()).getSeconds();
+                return Math.max(0L, seconds);
+            } catch (DateTimeParseException ignored) {
+                return null;
+            }
+        }
     }
 
     private Long parseLongHeader(HttpHeaders headers, String... headerNames) {

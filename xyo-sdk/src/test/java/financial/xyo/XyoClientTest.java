@@ -1052,6 +1052,114 @@ class XyoClientTest {
         assertFalse(exception.getMessage().contains("X".repeat(1001)));
     }
 
+    @Test
+    void testRequestOptions_EqualsHashCodeToString() {
+        java.util.UUID uuid1 = java.util.UUID.randomUUID();
+        java.util.UUID uuid2 = java.util.UUID.randomUUID();
+
+        RequestOptions opt1 = RequestOptions.builder()
+                .correlationId(uuid1)
+                .traceparent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+                .apiUser("user1")
+                .build();
+
+        RequestOptions opt2 = RequestOptions.builder()
+                .correlationId(uuid1)
+                .traceparent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+                .apiUser("user1")
+                .build();
+
+        RequestOptions opt3 = RequestOptions.builder()
+                .correlationId(uuid2)
+                .traceparent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+                .apiUser("user1")
+                .build();
+
+        assertEquals(opt1, opt2);
+        assertEquals(opt1.hashCode(), opt2.hashCode());
+        assertNotEquals(opt1, opt3);
+        assertNotEquals(opt1, null);
+        assertNotEquals(opt1, "other object");
+        assertEquals(opt1, opt1);
+
+        String str = opt1.toString();
+        assertTrue(str.contains("RequestOptions"));
+        assertTrue(str.contains(uuid1.toString()));
+        assertTrue(str.contains("user1"));
+    }
+
+    @Test
+    void testRetryAfterHeader_Rfc1123DateParsing() throws IOException {
+        java.time.ZonedDateTime futureDate = java.time.ZonedDateTime.now(java.time.ZoneOffset.UTC).plusSeconds(120);
+        String rfc1123Str = java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME.format(futureDate);
+
+        startTestServer(exchange -> {
+            exchange.getResponseHeaders().set("Retry-After", rfc1123Str);
+            exchange.sendResponseHeaders(429, 0);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(new byte[0]);
+            }
+        });
+
+        client = createTestClient();
+        EnrichmentRequest request = new EnrichmentRequest("Costa", "GB");
+
+        XyoException exception = assertThrows(XyoException.class, () -> {
+            client.enrichTransaction(request);
+        });
+
+        assertEquals(ErrorCategory.RATE_LIMIT, exception.getCategory());
+        assertNotNull(exception.getRetryAfter());
+        assertTrue(exception.getRetryAfter() > 0 && exception.getRetryAfter() <= 120,
+                "retryAfter should be calculated from RFC 1123 header, expected ~120s but got " + exception.getRetryAfter());
+    }
+
+    @Test
+    void testS3EndpointPattern_GlobalAndDualstack() throws Exception {
+        client = createTestClient();
+
+        XyoException ex1 = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://s3.amazonaws.com/mybucket/file.tar.gz");
+        });
+        assertFalse(ex1.getMessage().contains("is not permitted for secure archive downloads"),
+                "s3.amazonaws.com should be permitted by ALLOWED_S3_PATTERN");
+
+        XyoException ex2 = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://bucket.s3.amazonaws.com/file.tar.gz");
+        });
+        assertFalse(ex2.getMessage().contains("is not permitted for secure archive downloads"),
+                "bucket.s3.amazonaws.com should be permitted by ALLOWED_S3_PATTERN");
+
+        XyoException ex3 = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://bucket.s3.dualstack.us-east-1.amazonaws.com/file.tar.gz");
+        });
+        assertFalse(ex3.getMessage().contains("is not permitted for secure archive downloads"),
+                "bucket.s3.dualstack.us-east-1.amazonaws.com should be permitted by ALLOWED_S3_PATTERN");
+
+        XyoException ex4 = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://unauthorized.domain.com/file.tar.gz");
+        });
+        assertTrue(ex4.getMessage().contains("Domain 'unauthorized.domain.com' is not permitted for secure archive downloads"));
+    }
+
+    @Test
+    void testApiException_InterruptedException_ReassertsInterrupt() {
+        financial.xyo.client.ApiException apiEx = new financial.xyo.client.ApiException(new InterruptedException("interrupted"));
+
+        Thread.interrupted();
+
+        try {
+            java.lang.reflect.Method method = XyoClient.class.getDeclaredMethod("handleApiException", financial.xyo.client.ApiException.class);
+            method.setAccessible(true);
+            XyoClient clientObj = createTestClient();
+            method.invoke(clientObj, apiEx);
+        } catch (Exception ignored) {
+        }
+
+        assertTrue(Thread.currentThread().isInterrupted(), "Thread interrupt flag should be set");
+        Thread.interrupted();
+    }
+
     private static byte[] createTarGzArchive(Map<String, String> files) throws IOException {
         ByteArrayOutputStream tarBaos = new ByteArrayOutputStream();
         for (Map.Entry<String, String> entry : files.entrySet()) {
