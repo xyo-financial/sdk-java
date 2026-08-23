@@ -57,7 +57,7 @@ The SDK is published to Maven Central. Add the dependency to your build configur
 <dependency>
     <groupId>io.github.xyo-financial</groupId>
     <artifactId>xyo-sdk</artifactId>
-    <version>2.0.1</version>
+    <version>2.1.0</version>
 </dependency>
 ```
 
@@ -69,7 +69,7 @@ repositories {
 }
 
 dependencies {
-    implementation 'io.github.xyo-financial:xyo-sdk:2.0.1'
+    implementation 'io.github.xyo-financial:xyo-sdk:2.1.0'
 }
 ```
 
@@ -81,7 +81,7 @@ repositories {
 }
 
 dependencies {
-    implementation("io.github.xyo-financial:xyo-sdk:2.0.1")
+    implementation("io.github.xyo-financial:xyo-sdk:2.1.0")
 }
 ```
 
