@@ -1,6 +1,7 @@
 package financial.xyo;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Locale;
 import java.util.Objects;
@@ -9,8 +10,9 @@ import java.util.Objects;
  * Parameters submitted to enrich a transaction description.
  * <p>
  * Enforces domain invariants and canonicalization at construction time (fail-fast).
- * Use the {@link Builder} to construct immutable EnrichmentRequest instances.
+ * Use {@link #builder()} to construct immutable EnrichmentRequest instances.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public final class EnrichmentRequest {
     private final String content;
     private final String countryCode;
@@ -77,6 +79,15 @@ public final class EnrichmentRequest {
         if (!isAlpha2(countryCode)) {
             throw new XyoException(ErrorCategory.VALIDATION, "countryCode must be a 2-letter ISO 3166-1 alpha-2 country code");
         }
+    }
+
+    /**
+     * Creates a new Builder instance for constructing {@link EnrichmentRequest}.
+     * 
+     * @return a new Builder
+     */
+    public static Builder builder() {
+        return new Builder();
     }
 
     @Override

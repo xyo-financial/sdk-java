@@ -1,6 +1,7 @@
 package financial.xyo;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.jspecify.annotations.Nullable;
 import java.util.Collections;
@@ -11,6 +12,7 @@ import java.util.Objects;
  * Result returned for a successful transaction enrichment request.
  * Contains identified merchant, description, categories, logo and location details.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public final class EnrichmentResponse {
     private final String merchant;
     private final String description;
@@ -97,6 +99,15 @@ public final class EnrichmentResponse {
      */
     public @Nullable String getAddress() {
         return address;
+    }
+
+    /**
+     * Creates a new Builder instance for constructing {@link EnrichmentResponse}.
+     * 
+     * @return a new Builder
+     */
+    public static Builder builder() {
+        return new Builder();
     }
 
     @Override

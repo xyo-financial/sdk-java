@@ -1,6 +1,7 @@
 package financial.xyo;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.util.Objects;
 
@@ -8,6 +9,7 @@ import java.util.Objects;
  * Result returned when submitting a bulk asynchronous transaction collection request.
  * Contains batch ID and tracing URL.
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public final class EnrichTransactionCollectionResponse {
     private final String id;
     private final String link;
@@ -42,6 +44,15 @@ public final class EnrichTransactionCollectionResponse {
      */
     public String getLink() {
         return link;
+    }
+
+    /**
+     * Creates a new Builder instance for constructing {@link EnrichTransactionCollectionResponse}.
+     * 
+     * @return a new Builder
+     */
+    public static Builder builder() {
+        return new Builder();
     }
 
     @Override

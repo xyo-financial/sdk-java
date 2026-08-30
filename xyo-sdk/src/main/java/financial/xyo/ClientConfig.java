@@ -274,8 +274,11 @@ public final class ClientConfig {
          * @param apiKey the API key
          * @return this builder
          */
-        public Builder apiKey(String apiKey) {
+        public Builder apiKey(@Nullable String apiKey) {
             this.apiKey = apiKey;
+            if (apiKey != null && !apiKey.trim().isEmpty()) {
+                this.apiKeySupplier = null; // Clear supplier to avoid mutual exclusivity collision
+            }
             return this;
         }
 
@@ -285,8 +288,11 @@ public final class ClientConfig {
          * @param apiKeySupplier the dynamic key supplier
          * @return this builder
          */
-        public Builder apiKeySupplier(Supplier<String> apiKeySupplier) {
+        public Builder apiKeySupplier(@Nullable Supplier<String> apiKeySupplier) {
             this.apiKeySupplier = apiKeySupplier;
+            if (apiKeySupplier != null) {
+                this.apiKey = null; // Clear static key to avoid mutual exclusivity collision
+            }
             return this;
         }
 

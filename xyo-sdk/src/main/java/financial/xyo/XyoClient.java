@@ -654,6 +654,15 @@ public class XyoClient implements AutoCloseable {
             return count;
         }
 
+        @Override
+        public long skip(long n) throws IOException {
+            long skipped = super.skip(n);
+            if (skipped > 0) {
+                checkCount(skipped);
+            }
+            return skipped;
+        }
+
         private void checkCount(long count) throws IOException {
             bytesRead += count;
             if (maxBytes > 0 && bytesRead > maxBytes) {

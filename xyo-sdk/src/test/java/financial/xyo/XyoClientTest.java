@@ -1287,13 +1287,48 @@ class XyoClientTest {
     }
 
     @Test
-    void testClientConfigBuilder_MutualExclusivity() {
-        // Providing both apiKey and apiKeySupplier throws IllegalArgumentException
-        assertThrows(IllegalArgumentException.class, () -> {
-            new ClientConfig.Builder("static-key")
-                    .apiKeySupplier(() -> "dynamic-key")
-                    .build();
-        });
+    void testToBuilder_AuthModeSwitching() {
+        ClientConfig staticConfig = ClientConfig.builder("static-key").build();
+        assertEquals("static-key", staticConfig.getApiKey());
+        assertNull(staticConfig.getApiKeySupplier());
+
+        // Switch to dynamic supplier via toBuilder()
+        ClientConfig dynamicConfig = staticConfig.toBuilder().apiKeySupplier(() -> "dynamic-key").build();
+        assertNotNull(dynamicConfig.getApiKeySupplier());
+        assertEquals("dynamic-key", dynamicConfig.getApiKey());
+
+        // Switch back to static key via toBuilder()
+        ClientConfig backToStatic = dynamicConfig.toBuilder().apiKey("new-static-key").build();
+        assertNull(backToStatic.getApiKeySupplier());
+        assertEquals("new-static-key", backToStatic.getApiKey());
+    }
+
+    @Test
+    void testStaticBuilderUniformity() {
+        EnrichmentRequest req = EnrichmentRequest.builder().content("Tesco").countryCode("GB").build();
+        assertEquals("Tesco", req.getContent());
+        assertEquals("GB", req.getCountryCode());
+
+        EnrichmentResponse res = EnrichmentResponse.builder().merchant("Tesco Extra").description("Groceries").build();
+        assertEquals("Tesco Extra", res.getMerchant());
+        assertEquals("Groceries", res.getDescription());
+
+        EnrichTransactionCollectionResponse batch = EnrichTransactionCollectionResponse.builder().id("batch-456").link("https://status").build();
+        assertEquals("batch-456", batch.getId());
+        assertEquals("https://status", batch.getLink());
+    }
+
+    @Test
+    void testJsonIgnoreUnknownProperties() throws Exception {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+
+        String responseJson = "{\"merchant\":\"Costa\",\"description\":\"Coffee\",\"future_metadata\":\"v2_field\"}";
+        EnrichmentResponse res = mapper.readValue(responseJson, EnrichmentResponse.class);
+        assertEquals("Costa", res.getMerchant());
+
+        String batchJson = "{\"id\":\"batch-789\",\"link\":\"https://api/batches/789\",\"extra_routing\":\"aws-eu-west-1\"}";
+        EnrichTransactionCollectionResponse batch = mapper.readValue(batchJson, EnrichTransactionCollectionResponse.class);
+        assertEquals("batch-789", batch.getId());
     }
 
     @Test
