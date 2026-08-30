@@ -110,6 +110,21 @@ public final class EnrichmentResponse {
         return new Builder();
     }
 
+    /**
+     * Creates a new {@link Builder} initialized with values from this instance.
+     * 
+     * @return a pre-populated Builder
+     */
+    public Builder toBuilder() {
+        return new Builder()
+                .merchant(this.merchant)
+                .description(this.description)
+                .categories(this.categories)
+                .logo(this.logo)
+                .location(this.location)
+                .address(this.address);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

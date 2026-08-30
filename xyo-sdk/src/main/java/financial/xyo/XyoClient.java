@@ -45,6 +45,8 @@ import java.util.function.Supplier;
  */
 public class XyoClient implements AutoCloseable {
 
+    private static final System.Logger LOGGER = System.getLogger(XyoClient.class.getName());
+
     private static final Pattern TRACEPARENT_PATTERN =
             Pattern.compile("^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$");
 
@@ -55,6 +57,7 @@ public class XyoClient implements AutoCloseable {
     private final String apiBaseUrl;
     private final boolean allowInsecureHttp;
     private final long maxResponseBytes;
+    private final int maxTarEntries;
     private final HttpClient httpClient;
     private final Duration requestTimeout;
     private final ObjectMapper objectMapper;
@@ -116,6 +119,7 @@ public class XyoClient implements AutoCloseable {
 
         this.allowInsecureHttp = config.isAllowInsecureHttp();
         this.maxResponseBytes = config.getMaxResponseBytes();
+        this.maxTarEntries = config.getMaxTarEntries();
 
         String baseUrl = config.getApiBaseUrl();
         int end = baseUrl.length();
@@ -132,7 +136,7 @@ public class XyoClient implements AutoCloseable {
         }
 
         // Validate insecure connection setting
-        if (!this.allowInsecureHttp && this.apiBaseUrl.toLowerCase().startsWith("http://")) {
+        if (!this.allowInsecureHttp && this.apiBaseUrl.toLowerCase(Locale.ROOT).startsWith("http://")) {
             throw new XyoException(ErrorCategory.VALIDATION, "Insecure HTTP connections are not allowed by default. Set allowInsecureHttp to true in ClientConfig if this is intentional.");
         }
 
@@ -488,7 +492,7 @@ public class XyoClient implements AutoCloseable {
 
         URI baseUri = URI.create(this.apiBaseUrl);
         boolean isApiHost = (baseUri.getHost() != null && baseUri.getHost().equalsIgnoreCase(uri.getHost()));
-        boolean isS3 = (uri.getHost() != null && ALLOWED_S3_PATTERN.matcher(uri.getHost().toLowerCase()).matches());
+        boolean isS3 = (uri.getHost() != null && ALLOWED_S3_PATTERN.matcher(uri.getHost().toLowerCase(Locale.ROOT)).matches());
 
         if (!isApiHost && !isS3) {
             throw new XyoException(ErrorCategory.VALIDATION, "Domain '" + uri.getHost() + "' is not permitted for secure archive downloads");
@@ -553,25 +557,25 @@ public class XyoClient implements AutoCloseable {
             throw createHttpException(statusCode, errorBody, response.headers(), null);
         }
 
-        // Validate Content-Type header to diagnose intermediate proxy/WAF challenge pages
-        String contentType = response.headers().firstValue("Content-Type").orElse("");
-        if (!contentType.isEmpty()) {
-            String ct = contentType.toLowerCase();
-            if (!ct.contains("gzip") && !ct.contains("tar") && !ct.contains("octet-stream") && !ct.contains("binary")) {
-                throw new XyoException(
-                        ErrorCategory.HTTP,
-                        "Unexpected Content-Type '" + contentType + "' received when expecting binary archive",
-                        statusCode,
-                        0,
-                        ""
-                );
-            }
-        }
-
         List<EnrichmentResponse> results = new ArrayList<>();
         try (InputStream responseStream = response.body()) {
             if (responseStream == null) {
                 throw new XyoException(ErrorCategory.PARSING, "Response body is null");
+            }
+
+            // Validate Content-Type while stream is safely managed inside try-with-resources
+            String contentType = response.headers().firstValue("Content-Type").orElse("");
+            if (!contentType.isEmpty()) {
+                String ct = contentType.toLowerCase(Locale.ROOT);
+                if (!ct.contains("gzip") && !ct.contains("tar") && !ct.contains("octet-stream") && !ct.contains("binary")) {
+                    throw new XyoException(
+                            ErrorCategory.HTTP,
+                            "Unexpected Content-Type '" + contentType + "' received when expecting binary archive",
+                            statusCode,
+                            0,
+                            ""
+                    );
+                }
             }
 
             InputStream boundedRawStream = (this.maxResponseBytes > 0)
@@ -588,8 +592,8 @@ public class XyoClient implements AutoCloseable {
                     int entryCount = 0;
                     while ((entry = tarIn.getNextTarEntry()) != null) {
                         entryCount++;
-                        if (entryCount > ClientConfig.DEFAULT_MAX_TAR_ENTRIES) {
-                            throw new PayloadTooLargeException("Archive contains too many entries (exceeded maximum limit of " + ClientConfig.DEFAULT_MAX_TAR_ENTRIES + " entries)");
+                        if (this.maxTarEntries > 0 && entryCount > this.maxTarEntries) {
+                            throw new PayloadTooLargeException("Archive contains too many entries (exceeded maximum limit of " + this.maxTarEntries + " entries)");
                         }
                         if (entry.isDirectory()) {
                             continue;
@@ -707,8 +711,7 @@ public class XyoClient implements AutoCloseable {
             try {
                 ((AutoCloseable) this.httpClient).close();
             } catch (Exception e) {
-                System.err.println("[WARN] financial.xyo.XyoClient: Failed to cleanly close underlying HTTP client: " + e.getMessage());
-                throw new XyoException(ErrorCategory.TRANSPORT, "Failed to cleanly close HTTP client: " + e.getMessage(), e);
+                LOGGER.log(System.Logger.Level.WARNING, "Failed to cleanly close underlying HTTP client", e);
             }
         }
     }

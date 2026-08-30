@@ -19,8 +19,8 @@ public final class ClientConfig {
     /** Environment variable name used to configure the API base URL. */
     public static final String ENV_API_BASE_URL = "XYO_API_BASE_URL";
 
-    /** Default maximum number of entries permitted when unpacking results archives (10,000). */
-    public static final int DEFAULT_MAX_TAR_ENTRIES = 10000;
+    /** Default maximum number of entries permitted when unpacking results archives (50,000). */
+    public static final int DEFAULT_MAX_TAR_ENTRIES = 50000;
     
     /** The default connection timeout in milliseconds (5 seconds). */
     public static final long DEFAULT_CONNECT_TIMEOUT_MS = 5000;
@@ -40,6 +40,7 @@ public final class ClientConfig {
     private final long connectTimeoutMs;
     private final long requestTimeoutMs;
     private final long maxResponseBytes;
+    private final int maxTarEntries;
     private final boolean allowInsecureHttp;
     private final HttpClient.@Nullable Builder httpClientBuilder;
 
@@ -74,6 +75,7 @@ public final class ClientConfig {
         this.connectTimeoutMs = builder.connectTimeoutMs;
         this.requestTimeoutMs = builder.requestTimeoutMs;
         this.maxResponseBytes = builder.maxResponseBytes;
+        this.maxTarEntries = builder.maxTarEntries;
         this.allowInsecureHttp = builder.allowInsecureHttp;
         this.httpClientBuilder = builder.httpClientBuilder;
     }
@@ -136,6 +138,15 @@ public final class ClientConfig {
     }
 
     /**
+     * Gets the maximum allowed tar entries when extracting archive responses.
+     * 
+     * @return maximum tar entries
+     */
+    public int getMaxTarEntries() {
+        return maxTarEntries;
+    }
+
+    /**
      * Indicates whether insecure HTTP connections are allowed.
      * 
      * @return true if insecure HTTP is allowed
@@ -195,6 +206,7 @@ public final class ClientConfig {
         b.connectTimeoutMs = this.connectTimeoutMs;
         b.requestTimeoutMs = this.requestTimeoutMs;
         b.maxResponseBytes = this.maxResponseBytes;
+        b.maxTarEntries = this.maxTarEntries;
         b.allowInsecureHttp = this.allowInsecureHttp;
         b.httpClientBuilder = this.httpClientBuilder;
         return b;
@@ -208,13 +220,16 @@ public final class ClientConfig {
         return connectTimeoutMs == that.connectTimeoutMs &&
                 requestTimeoutMs == that.requestTimeoutMs &&
                 maxResponseBytes == that.maxResponseBytes &&
+                maxTarEntries == that.maxTarEntries &&
                 allowInsecureHttp == that.allowInsecureHttp &&
-                Objects.equals(apiBaseUrl, that.apiBaseUrl);
+                Objects.equals(apiBaseUrl, that.apiBaseUrl) &&
+                Objects.equals(apiKey, that.apiKey) &&
+                Objects.equals(apiKeySupplier, that.apiKeySupplier);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(apiBaseUrl, connectTimeoutMs, requestTimeoutMs, maxResponseBytes, allowInsecureHttp);
+        return Objects.hash(apiBaseUrl, apiKey, apiKeySupplier, connectTimeoutMs, requestTimeoutMs, maxResponseBytes, maxTarEntries, allowInsecureHttp);
     }
 
     @Override
@@ -226,6 +241,7 @@ public final class ClientConfig {
                 ", connectTimeoutMs=" + connectTimeoutMs +
                 ", requestTimeoutMs=" + requestTimeoutMs +
                 ", maxResponseBytes=" + maxResponseBytes +
+                ", maxTarEntries=" + maxTarEntries +
                 ", allowInsecureHttp=" + allowInsecureHttp +
                 ", httpClientBuilder=" + (httpClientBuilder != null ? "[CONFIGURED]" : "null") +
                 '}';
@@ -241,6 +257,7 @@ public final class ClientConfig {
         private long connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
         private long requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS;
         private long maxResponseBytes = DEFAULT_MAX_RESPONSE_BYTES;
+        private int maxTarEntries = DEFAULT_MAX_TAR_ENTRIES;
         private boolean allowInsecureHttp = DEFAULT_ALLOW_INSECURE_HTTP;
         private HttpClient.Builder httpClientBuilder;
 
@@ -337,6 +354,17 @@ public final class ClientConfig {
          */
         public Builder maxResponseBytes(long maxResponseBytes) {
             this.maxResponseBytes = maxResponseBytes;
+            return this;
+        }
+
+        /**
+         * Sets the maximum number of archive tar entries to extract.
+         * 
+         * @param maxTarEntries maximum tar entries
+         * @return this builder
+         */
+        public Builder maxTarEntries(int maxTarEntries) {
+            this.maxTarEntries = maxTarEntries;
             return this;
         }
 

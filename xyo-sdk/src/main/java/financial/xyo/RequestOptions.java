@@ -6,7 +6,7 @@ import java.util.UUID;
  * Configuration options for individual API requests, supporting distributed tracing parameters
  * and custom header values.
  */
-public class RequestOptions {
+public final class RequestOptions {
 
     private final UUID correlationId;
     private final String traceparent;
@@ -67,6 +67,18 @@ public class RequestOptions {
      */
     public String getApiUser() {
         return apiUser;
+    }
+
+    /**
+     * Creates a new {@link Builder} initialized with values from this instance.
+     * 
+     * @return a pre-populated Builder
+     */
+    public Builder toBuilder() {
+        return new Builder()
+                .correlationId(this.correlationId)
+                .traceparent(this.traceparent)
+                .apiUser(this.apiUser);
     }
 
     @Override

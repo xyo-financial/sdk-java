@@ -55,6 +55,17 @@ public final class EnrichTransactionCollectionResponse {
         return new Builder();
     }
 
+    /**
+     * Creates a new {@link Builder} initialized with values from this instance.
+     * 
+     * @return a pre-populated Builder
+     */
+    public Builder toBuilder() {
+        return new Builder()
+                .id(this.id)
+                .link(this.link);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;

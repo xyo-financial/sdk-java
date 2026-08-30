@@ -1333,19 +1333,27 @@ class XyoClientTest {
     }
 
     @Test
-    void testClientConfig_EqualsAndHashCode_ExcludesLambdasAndSecrets() {
-        ClientConfig config1 = new ClientConfig.Builder("key1")
+    void testClientConfig_EqualsAndHashCode_MultiTenantCredentialSeparation() {
+        ClientConfig configTenantA = new ClientConfig.Builder("key-tenant-A")
                 .apiBaseUrl("https://api.xyo.financial")
                 .connectTimeoutMs(5000)
                 .build();
 
-        ClientConfig config2 = new ClientConfig.Builder(() -> "key2")
+        ClientConfig configTenantASame = new ClientConfig.Builder("key-tenant-A")
                 .apiBaseUrl("https://api.xyo.financial")
                 .connectTimeoutMs(5000)
                 .build();
 
-        assertEquals(config1, config2);
-        assertEquals(config1.hashCode(), config2.hashCode());
+        ClientConfig configTenantB = new ClientConfig.Builder("key-tenant-B")
+                .apiBaseUrl("https://api.xyo.financial")
+                .connectTimeoutMs(5000)
+                .build();
+
+        assertEquals(configTenantA, configTenantASame);
+        assertEquals(configTenantA.hashCode(), configTenantASame.hashCode());
+
+        assertNotEquals(configTenantA, configTenantB);
+        assertNotEquals(configTenantA.hashCode(), configTenantB.hashCode());
     }
 
     @Test
@@ -1388,9 +1396,11 @@ class XyoClientTest {
         ClientConfig config = new ClientConfig.Builder("test-key")
                 .apiBaseUrl("https://api.xyo.financial")
                 .httpClientBuilder(customBuilder)
+                .maxTarEntries(30000)
                 .build();
 
         assertNotNull(config.getHttpClientBuilder());
+        assertEquals(30000, config.getMaxTarEntries());
         XyoClient customClient = new XyoClient(config);
         assertNotNull(customClient);
     }
@@ -1401,5 +1411,32 @@ class XyoClientTest {
         assertThrows(UnsupportedOperationException.class, () -> {
             new ClientConfig.Builder("test-key").httpClient(dummyClient);
         });
+    }
+
+    @Test
+    void testToBuilder_AcrossDtoModels() {
+        RequestOptions opts = RequestOptions.builder()
+                .correlationId(java.util.UUID.randomUUID())
+                .traceparent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+                .apiUser("tenant-user-1")
+                .build();
+        RequestOptions optsClone = opts.toBuilder().apiUser("tenant-user-2").build();
+        assertEquals("tenant-user-2", optsClone.getApiUser());
+        assertEquals(opts.getCorrelationId(), optsClone.getCorrelationId());
+
+        EnrichmentRequest req = EnrichmentRequest.builder().content("Uber").countryCode("US").build();
+        EnrichmentRequest reqClone = req.toBuilder().countryCode("GB").build();
+        assertEquals("GB", reqClone.getCountryCode());
+        assertEquals("Uber", reqClone.getContent());
+
+        EnrichmentResponse res = EnrichmentResponse.builder().merchant("Spotify").location("Stockholm").build();
+        EnrichmentResponse resClone = res.toBuilder().location("London").build();
+        assertEquals("Spotify", resClone.getMerchant());
+        assertEquals("London", resClone.getLocation());
+
+        EnrichTransactionCollectionResponse col = EnrichTransactionCollectionResponse.builder().id("id-1").link("link-1").build();
+        EnrichTransactionCollectionResponse colClone = col.toBuilder().link("link-2").build();
+        assertEquals("id-1", colClone.getId());
+        assertEquals("link-2", colClone.getLink());
     }
 }

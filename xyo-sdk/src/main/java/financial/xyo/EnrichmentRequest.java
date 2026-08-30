@@ -90,6 +90,17 @@ public final class EnrichmentRequest {
         return new Builder();
     }
 
+    /**
+     * Creates a new {@link Builder} initialized with values from this instance.
+     * 
+     * @return a pre-populated Builder
+     */
+    public Builder toBuilder() {
+        return new Builder()
+                .content(this.content)
+                .countryCode(this.countryCode);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
