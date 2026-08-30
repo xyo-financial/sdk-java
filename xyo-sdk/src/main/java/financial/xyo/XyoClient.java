@@ -48,6 +48,9 @@ public class XyoClient implements AutoCloseable {
 
     private static final System.Logger LOGGER = System.getLogger(XyoClient.class.getName());
 
+    /** Maximum allowed batch ingestion size for asynchronous collection enrichment (50,000). */
+    public static final int MAX_BATCH_REQUEST_SIZE = 50000;
+
     private static final Pattern TRACEPARENT_PATTERN =
             Pattern.compile("^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$");
 
@@ -56,6 +59,7 @@ public class XyoClient implements AutoCloseable {
 
     private final Supplier<String> apiKeySupplier;
     private final String apiBaseUrl;
+    private final @Nullable String apiHost;
     private final boolean allowInsecureHttp;
     private final long maxResponseBytes;
     private final long maxDecompressedBytes;
@@ -70,7 +74,7 @@ public class XyoClient implements AutoCloseable {
         int len = s.length();
         for (int i = 0; i < len; i++) {
             char c = s.charAt(i);
-            if ((c < 0x20 && c != '\t') || c == 0x7F) {
+            if (c < 0x20 || c == 0x7F) {
                 return true;
             }
         }
@@ -143,9 +147,10 @@ public class XyoClient implements AutoCloseable {
         }
         this.apiBaseUrl = baseUrl.substring(0, end);
 
-        // Fail-fast URL parsing check
+        // Fail-fast URL parsing check and host caching
         try {
-            URI.create(this.apiBaseUrl);
+            URI parsedBase = URI.create(this.apiBaseUrl);
+            this.apiHost = parsedBase.getHost();
         } catch (IllegalArgumentException e) {
             throw new XyoException(ErrorCategory.VALIDATION, "Invalid API base URL: " + this.apiBaseUrl, e);
         }
@@ -158,14 +163,17 @@ public class XyoClient implements AutoCloseable {
         ApiClient apiClient = new ApiClient();
         apiClient.updateBaseUri(this.apiBaseUrl);
 
-        if (config.getHttpClientBuilder() != null) {
-            apiClient.setHttpClientBuilder(config.getHttpClientBuilder());
-        } else {
-            // Enforce minimum TLS 1.2+ version (PCI-DSS 4.0 §4.2.1 compliance)
-            SSLParameters sslParams = new SSLParameters();
-            sslParams.setProtocols(new String[]{"TLSv1.3", "TLSv1.2"});
-            apiClient.setHttpClientBuilder(HttpClient.newBuilder().sslParameters(sslParams));
+        HttpClient.Builder httpBuilder = config.getHttpClientBuilder();
+        if (httpBuilder == null) {
+            httpBuilder = HttpClient.newBuilder();
         }
+
+        // Enforce institutional TLS 1.2+ protocols across all builder instances (PCI-DSS 4.0 §4.2.1)
+        SSLParameters sslParams = new SSLParameters();
+        sslParams.setProtocols(new String[]{"TLSv1.3", "TLSv1.2"});
+        httpBuilder.sslParameters(sslParams);
+
+        apiClient.setHttpClientBuilder(httpBuilder);
 
         if (config.getConnectTimeoutMs() > 0) {
             apiClient.setConnectTimeout(Duration.ofMillis(config.getConnectTimeoutMs()));
@@ -326,8 +334,8 @@ public class XyoClient implements AutoCloseable {
         if (requests == null || requests.isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "requests list must not be null or empty");
         }
-        if (requests.size() > 50000) {
-            throw new XyoException(ErrorCategory.VALIDATION, "requests list size must not exceed 50,000 items");
+        if (requests.size() > MAX_BATCH_REQUEST_SIZE) {
+            throw new XyoException(ErrorCategory.VALIDATION, String.format("requests list size must not exceed %,d items", MAX_BATCH_REQUEST_SIZE));
         }
         List<EnrichTransactionsRequestInner> apiReqList = new ArrayList<>(requests.size());
         for (EnrichmentRequest request : requests) {
@@ -555,8 +563,7 @@ public class XyoClient implements AutoCloseable {
             throw new XyoException(ErrorCategory.VALIDATION, "Insecure HTTP connections are not allowed by default. Set allowInsecureHttp to true in ClientConfig if this is intentional.");
         }
 
-        URI baseUri = URI.create(this.apiBaseUrl);
-        boolean isApiHost = (baseUri.getHost() != null && baseUri.getHost().equalsIgnoreCase(uri.getHost()));
+        boolean isApiHost = (this.apiHost != null && this.apiHost.equalsIgnoreCase(uri.getHost()));
         boolean isS3 = (uri.getHost() != null && ALLOWED_S3_PATTERN.matcher(uri.getHost().toLowerCase(Locale.ROOT)).matches());
 
         if (!isApiHost && !isS3) {

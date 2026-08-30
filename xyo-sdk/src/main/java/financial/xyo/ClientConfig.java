@@ -246,12 +246,24 @@ public final class ClientConfig {
                 allowInsecureHttp == that.allowInsecureHttp &&
                 Objects.equals(apiBaseUrl, that.apiBaseUrl) &&
                 Objects.equals(apiKey, that.apiKey) &&
-                Objects.equals(apiKeySupplier, that.apiKeySupplier);
+                Objects.equals(apiKeySupplier, that.apiKeySupplier) &&
+                Objects.equals(httpClientBuilder, that.httpClientBuilder);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(apiBaseUrl, apiKey, apiKeySupplier, connectTimeoutMs, requestTimeoutMs, maxResponseBytes, maxDecompressedBytes, maxTarEntries, allowInsecureHttp);
+        return Objects.hash(
+                apiBaseUrl,
+                apiKey,
+                apiKeySupplier,
+                connectTimeoutMs,
+                requestTimeoutMs,
+                maxResponseBytes,
+                maxDecompressedBytes,
+                maxTarEntries,
+                allowInsecureHttp,
+                httpClientBuilder
+        );
     }
 
     @Override

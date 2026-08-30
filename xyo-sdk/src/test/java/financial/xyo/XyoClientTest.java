@@ -1485,4 +1485,47 @@ class XyoClientTest {
         assertEquals("Deliveroo", streamedResults.get(0).getMerchant());
         assertEquals("London", streamedResults.get(0).getLocation());
     }
+
+    @Test
+    void testClientConfig_EqualsAndHashCode_HttpClientBuilderDifferent() {
+        java.net.http.HttpClient.Builder builder1 = java.net.http.HttpClient.newBuilder();
+        java.net.http.HttpClient.Builder builder2 = java.net.http.HttpClient.newBuilder();
+
+        ClientConfig config1 = new ClientConfig.Builder("test-key").httpClientBuilder(builder1).build();
+        ClientConfig config1Same = new ClientConfig.Builder("test-key").httpClientBuilder(builder1).build();
+        ClientConfig config2 = new ClientConfig.Builder("test-key").httpClientBuilder(builder2).build();
+
+        assertEquals(config1, config1Same);
+        assertEquals(config1.hashCode(), config1Same.hashCode());
+
+        assertNotEquals(config1, config2);
+        assertNotEquals(config1.hashCode(), config2.hashCode());
+    }
+
+    @Test
+    void testRequestOptions_ConstructionValidation() {
+        // Valid options
+        RequestOptions valid = RequestOptions.builder()
+                .traceparent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+                .apiUser("tenant-user-1")
+                .build();
+        assertNotNull(valid);
+
+        // Invalid traceparent
+        assertThrows(XyoException.class, () -> RequestOptions.builder().traceparent("invalid-traceparent").build());
+        assertThrows(XyoException.class, () -> new RequestOptions(null, "invalid-traceparent"));
+
+        // Control characters (CRLF, tab) in apiUser
+        assertThrows(XyoException.class, () -> RequestOptions.builder().apiUser("tenant\nuser").build());
+        assertThrows(XyoException.class, () -> RequestOptions.builder().apiUser("tenant\tuser").build());
+        assertThrows(XyoException.class, () -> new RequestOptions(null, null, "tenant\ruser"));
+    }
+
+    @Test
+    void testApiKey_TabCharacterRejected() {
+        ClientConfig configWithTab = new ClientConfig.Builder("key-with-\t-tab").build();
+        XyoException exception = assertThrows(XyoException.class, () -> new XyoClient(configWithTab));
+        assertEquals(ErrorCategory.VALIDATION, exception.getCategory());
+        assertTrue(exception.getMessage().contains("control characters"));
+    }
 }
