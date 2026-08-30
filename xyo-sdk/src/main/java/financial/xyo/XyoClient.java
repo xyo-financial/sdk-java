@@ -691,7 +691,7 @@ public class XyoClient implements AutoCloseable {
                 }
             }
         } catch (PayloadTooLargeException e) {
-            throw new XyoException(ErrorCategory.PARSING, e.getMessage(), e);
+            throw new XyoException(ErrorCategory.VALIDATION, e.getMessage(), e);
         } catch (IOException e) {
             throw new XyoException(ErrorCategory.PARSING, "Failed to decompress gzip response: " + e.getMessage(), e);
         }

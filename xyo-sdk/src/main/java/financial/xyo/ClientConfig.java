@@ -361,7 +361,7 @@ public final class ClientConfig {
         }
 
         /**
-         * Sets the connection timeout in milliseconds.
+         * Sets the connection timeout in milliseconds (0 denotes an infinite wait timeout).
          * 
          * @param connectTimeoutMs connection timeout in milliseconds
          * @return this builder
@@ -372,7 +372,7 @@ public final class ClientConfig {
         }
 
         /**
-         * Sets the request timeout in milliseconds.
+         * Sets the request timeout in milliseconds (0 denotes an infinite wait timeout).
          * 
          * @param requestTimeoutMs request timeout in milliseconds
          * @return this builder
@@ -428,6 +428,11 @@ public final class ClientConfig {
 
         /**
          * Sets the custom HttpClient.Builder.
+         * <p>
+         * <b>Note on TLS &amp; SSL:</b> To comply with PCI-DSS 4.0 §4.2.1, {@link XyoClient} sets
+         * {@link javax.net.ssl.SSLParameters} on the builder to restrict protocols to TLSv1.2 and TLSv1.3.
+         * If custom trust stores, keystores, or mTLS are required, configure them on an {@link javax.net.ssl.SSLContext}
+         * and apply it via {@link HttpClient.Builder#sslContext(javax.net.ssl.SSLContext)}.
          * 
          * @param httpClientBuilder the custom client builder
          * @return this builder

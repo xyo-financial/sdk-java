@@ -663,7 +663,7 @@ class XyoClientTest {
             client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/download/bounded-test");
         });
 
-        assertEquals(ErrorCategory.PARSING, ex.getCategory());
+        assertEquals(ErrorCategory.VALIDATION, ex.getCategory());
         assertTrue(ex.getMessage().contains("Payload exceeded maximum allowed size"));
     }
 
@@ -696,7 +696,7 @@ class XyoClientTest {
             client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/download/zip-bomb");
         });
 
-        assertEquals(ErrorCategory.PARSING, ex.getCategory());
+        assertEquals(ErrorCategory.VALIDATION, ex.getCategory());
         assertTrue(ex.getMessage().contains("Payload exceeded maximum allowed size"));
     }
 
@@ -1527,5 +1527,37 @@ class XyoClientTest {
         XyoException exception = assertThrows(XyoException.class, () -> new XyoClient(configWithTab));
         assertEquals(ErrorCategory.VALIDATION, exception.getCategory());
         assertTrue(exception.getMessage().contains("control characters"));
+    }
+
+    @Test
+    void testDownloadEnrichmentCollection_ExceedsMaxTarEntriesThrowsValidation() throws IOException {
+        String json1 = "{\"merchant\":\"Merchant1\"}";
+        String json2 = "{\"merchant\":\"Merchant2\"}";
+        Map<String, String> files = new LinkedHashMap<>();
+        files.put("1.json", json1);
+        files.put("2.json", json2);
+        byte[] archiveBytes = createTarGzArchive(files);
+
+        startTestServer(exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "application/gzip");
+            exchange.sendResponseHeaders(200, archiveBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(archiveBytes);
+            }
+        });
+
+        ClientConfig config = new ClientConfig.Builder("test-key")
+                .apiBaseUrl("http://127.0.0.1:" + testServerPort)
+                .allowInsecureHttp(true)
+                .maxTarEntries(1) // only permit 1 entry
+                .build();
+        client = new XyoClient(config);
+
+        XyoException ex = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/download/too-many-entries");
+        });
+
+        assertEquals(ErrorCategory.VALIDATION, ex.getCategory());
+        assertTrue(ex.getMessage().contains("Archive contains too many entries"));
     }
 }
