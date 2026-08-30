@@ -209,15 +209,12 @@ public final class ClientConfig {
                 requestTimeoutMs == that.requestTimeoutMs &&
                 maxResponseBytes == that.maxResponseBytes &&
                 allowInsecureHttp == that.allowInsecureHttp &&
-                Objects.equals(apiKey, that.apiKey) &&
-                Objects.equals(apiKeySupplier, that.apiKeySupplier) &&
-                Objects.equals(apiBaseUrl, that.apiBaseUrl) &&
-                Objects.equals(httpClient, that.httpClient);
+                Objects.equals(apiBaseUrl, that.apiBaseUrl);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(apiKey, apiKeySupplier, apiBaseUrl, connectTimeoutMs, requestTimeoutMs, maxResponseBytes, allowInsecureHttp, httpClient);
+        return Objects.hash(apiBaseUrl, connectTimeoutMs, requestTimeoutMs, maxResponseBytes, allowInsecureHttp);
     }
 
     @Override
@@ -365,8 +362,13 @@ public final class ClientConfig {
          * @return the constructed ClientConfig
          */
         public ClientConfig build() {
-            if ((this.apiKey == null || this.apiKey.trim().isEmpty()) && this.apiKeySupplier == null) {
+            boolean hasKey = this.apiKey != null && !this.apiKey.trim().isEmpty();
+            boolean hasSupplier = this.apiKeySupplier != null;
+            if (!hasKey && !hasSupplier) {
                 throw new IllegalArgumentException("apiKey or apiKeySupplier must be provided");
+            }
+            if (hasKey && hasSupplier) {
+                throw new IllegalArgumentException("Provide either a static apiKey or an apiKeySupplier, not both");
             }
             return new ClientConfig(this);
         }

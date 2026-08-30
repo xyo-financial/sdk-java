@@ -1264,18 +1264,60 @@ class XyoClientTest {
 
     @Test
     void testEnrichmentRequestValidation_Alpha2AndTrimming() {
-        // Valid 2-letter codes and trimming
-        assertDoesNotThrow(() -> new EnrichmentRequest("  Starbucks  ", "  gb  ").validate());
-        assertDoesNotThrow(() -> new EnrichmentRequest("Apple", "US").validate());
-        assertDoesNotThrow(() -> new EnrichmentRequest("Lidl", "DE").validate());
+        // Valid 2-letter codes and automatic trimming / uppercase normalization
+        EnrichmentRequest req1 = new EnrichmentRequest("  Starbucks  ", "  gb  ");
+        assertEquals("Starbucks", req1.getContent());
+        assertEquals("GB", req1.getCountryCode());
 
-        // Invalid codes: digits, punctuation, 3-letter, 1-letter
-        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "12").validate());
-        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "G1").validate());
-        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "1G").validate());
-        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "GBR").validate());
-        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "G!").validate());
-        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "").validate());
+        EnrichmentRequest req2 = new EnrichmentRequest("Apple", "US");
+        assertEquals("Apple", req2.getContent());
+        assertEquals("US", req2.getCountryCode());
+
+        EnrichmentRequest req3 = new EnrichmentRequest("Lidl", "de");
+        assertEquals("Lidl", req3.getContent());
+        assertEquals("DE", req3.getCountryCode());
+
+        // Invalid codes: digits, punctuation, 3-letter, 1-letter (fail-fast on creation)
+        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "12"));
+        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "G1"));
+        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "1G"));
+        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "GBR"));
+        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "G!"));
+        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", ""));
+    }
+
+    @Test
+    void testClientConfigBuilder_MutualExclusivity() {
+        // Providing both apiKey and apiKeySupplier throws IllegalArgumentException
+        assertThrows(IllegalArgumentException.class, () -> {
+            new ClientConfig.Builder("static-key")
+                    .apiKeySupplier(() -> "dynamic-key")
+                    .build();
+        });
+    }
+
+    @Test
+    void testClientConfig_EqualsAndHashCode_ExcludesLambdasAndSecrets() {
+        ClientConfig config1 = new ClientConfig.Builder("key1")
+                .apiBaseUrl("https://api.xyo.financial")
+                .connectTimeoutMs(5000)
+                .build();
+
+        ClientConfig config2 = new ClientConfig.Builder(() -> "key2")
+                .apiBaseUrl("https://api.xyo.financial")
+                .connectTimeoutMs(5000)
+                .build();
+
+        assertEquals(config1, config2);
+        assertEquals(config1.hashCode(), config2.hashCode());
+    }
+
+    @Test
+    void testApiKey_ControlCharactersRejected() {
+        ClientConfig configWithCrlf = new ClientConfig.Builder("key-with-\r\ninjection").build();
+        XyoException exception = assertThrows(XyoException.class, () -> new XyoClient(configWithCrlf));
+        assertEquals(ErrorCategory.VALIDATION, exception.getCategory());
+        assertTrue(exception.getMessage().contains("control characters"));
     }
 
     @Test

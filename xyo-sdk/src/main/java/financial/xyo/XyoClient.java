@@ -67,6 +67,15 @@ public class XyoClient implements AutoCloseable {
         }
     }
 
+    private static void validateApiKey(String key) {
+        if (key == null || key.trim().isEmpty()) {
+            throw new XyoException(ErrorCategory.VALIDATION, "API key must not be null or empty");
+        }
+        if (key.chars().anyMatch(c -> (c < 0x20 && c != '\t') || c == 0x7F)) {
+            throw new XyoException(ErrorCategory.VALIDATION, "API key must not contain control characters");
+        }
+    }
+
     /**
      * Constructs a new instance of XyoClient using the given configuration properties.
      * All settings from config are defensively copied to maintain client immutability.
@@ -94,9 +103,7 @@ public class XyoClient implements AutoCloseable {
         } catch (Exception e) {
             throw new XyoException(ErrorCategory.VALIDATION, "Failed to retrieve initial API key from supplier: " + e.getMessage(), e);
         }
-        if (initialKey == null || initialKey.trim().isEmpty()) {
-            throw new XyoException(ErrorCategory.VALIDATION, "api_key must not be empty");
-        }
+        validateApiKey(initialKey);
 
         if (config.getApiBaseUrl() == null || config.getApiBaseUrl().isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "api_base_url must not be empty");
@@ -154,9 +161,7 @@ public class XyoClient implements AutoCloseable {
             } catch (Exception e) {
                 throw new XyoException(ErrorCategory.VALIDATION, "Failed to retrieve API key from supplier: " + e.getMessage(), e);
             }
-            if (key == null || key.trim().isEmpty()) {
-                throw new XyoException(ErrorCategory.VALIDATION, "API key supplier returned null or empty key; cannot authenticate request");
-            }
+            validateApiKey(key);
             builder.header("Authorization", "Bearer " + key.trim());
         });
 
@@ -207,8 +212,8 @@ public class XyoClient implements AutoCloseable {
         request.validate();
 
         financial.xyo.model.EnrichmentRequest apiReq = new financial.xyo.model.EnrichmentRequest();
-        apiReq.setContent(request.getContent().trim());
-        apiReq.setCountryCode(request.getCountryCode().trim().toUpperCase(Locale.ROOT));
+        apiReq.setContent(request.getContent());
+        apiReq.setCountryCode(request.getCountryCode());
 
         try {
             financial.xyo.model.EnrichmentResponse apiRes = enrichmentApi.enrichTransaction(apiReq, correlationId, traceparent);
@@ -307,8 +312,8 @@ public class XyoClient implements AutoCloseable {
             }
             request.validate();
             EnrichTransactionsRequestInner inner = new EnrichTransactionsRequestInner();
-            inner.setContent(request.getContent().trim());
-            inner.setCountryCode(request.getCountryCode().trim().toUpperCase(Locale.ROOT));
+            inner.setContent(request.getContent());
+            inner.setCountryCode(request.getCountryCode());
             apiReqList.add(inner);
         }
 
@@ -507,9 +512,10 @@ public class XyoClient implements AutoCloseable {
             throw new XyoException(ErrorCategory.VALIDATION, "Failed to retrieve API key from supplier: " + e.getMessage(), e);
         }
         if (currentKey != null && !currentKey.isEmpty()) {
+            validateApiKey(currentKey);
             // Only attach Authorization header if target host matches configured API base URL host (prevents token leakage)
             if (isApiHost) {
-                requestBuilder.header("Authorization", "Bearer " + currentKey);
+                requestBuilder.header("Authorization", "Bearer " + currentKey.trim());
             }
         }
 
@@ -682,7 +688,8 @@ public class XyoClient implements AutoCloseable {
         if (this.httpClient instanceof AutoCloseable) {
             try {
                 ((AutoCloseable) this.httpClient).close();
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                throw new XyoException(ErrorCategory.TRANSPORT, "Failed to cleanly close HTTP client: " + e.getMessage(), e);
             }
         }
     }
