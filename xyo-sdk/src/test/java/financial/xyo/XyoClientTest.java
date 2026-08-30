@@ -1560,4 +1560,21 @@ class XyoClientTest {
         assertEquals(ErrorCategory.VALIDATION, ex.getCategory());
         assertTrue(ex.getMessage().contains("Archive contains too many entries"));
     }
+
+    @Test
+    void testDownloadEnrichmentCollection_DifferentPortRejectedAsNonApiHost() {
+        ClientConfig config = new ClientConfig.Builder("test-key")
+                .apiBaseUrl("http://127.0.0.1:8080")
+                .allowInsecureHttp(true)
+                .build();
+        client = new XyoClient(config);
+
+        // Different port on 127.0.0.1 must be rejected as non-API host and not permitted
+        XyoException ex = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://127.0.0.1:9090/v1/download/batch.tar.gz");
+        });
+
+        assertEquals(ErrorCategory.VALIDATION, ex.getCategory());
+        assertTrue(ex.getMessage().contains("Domain '127.0.0.1' is not permitted"));
+    }
 }

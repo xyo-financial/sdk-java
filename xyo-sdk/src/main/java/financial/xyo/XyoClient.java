@@ -60,6 +60,7 @@ public class XyoClient implements AutoCloseable {
     private final Supplier<String> apiKeySupplier;
     private final String apiBaseUrl;
     private final @Nullable String apiHost;
+    private final int apiPort;
     private final boolean allowInsecureHttp;
     private final long maxResponseBytes;
     private final long maxDecompressedBytes;
@@ -147,10 +148,11 @@ public class XyoClient implements AutoCloseable {
         }
         this.apiBaseUrl = baseUrl.substring(0, end);
 
-        // Fail-fast URL parsing check and host caching
+        // Fail-fast URL parsing check and host/port caching
         try {
             URI parsedBase = URI.create(this.apiBaseUrl);
             this.apiHost = parsedBase.getHost();
+            this.apiPort = parsedBase.getPort();
         } catch (IllegalArgumentException e) {
             throw new XyoException(ErrorCategory.VALIDATION, "Invalid API base URL: " + this.apiBaseUrl, e);
         }
@@ -563,7 +565,11 @@ public class XyoClient implements AutoCloseable {
             throw new XyoException(ErrorCategory.VALIDATION, "Insecure HTTP connections are not allowed by default. Set allowInsecureHttp to true in ClientConfig if this is intentional.");
         }
 
-        boolean isApiHost = (this.apiHost != null && this.apiHost.equalsIgnoreCase(uri.getHost()));
+        int targetPort = uri.getPort();
+        boolean isSamePort = (this.apiPort == targetPort) ||
+                (this.apiPort == -1 && ("https".equalsIgnoreCase(scheme) ? (targetPort == -1 || targetPort == 443) : (targetPort == -1 || targetPort == 80))) ||
+                (targetPort == -1 && ("https".equalsIgnoreCase(scheme) ? (this.apiPort == 443) : (this.apiPort == 80)));
+        boolean isApiHost = (this.apiHost != null && this.apiHost.equalsIgnoreCase(uri.getHost()) && isSamePort);
         boolean isS3 = (uri.getHost() != null && ALLOWED_S3_PATTERN.matcher(uri.getHost().toLowerCase(Locale.ROOT)).matches());
 
         if (!isApiHost && !isS3) {
