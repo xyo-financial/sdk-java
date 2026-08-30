@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -1377,5 +1378,28 @@ class XyoClientTest {
         });
         assertEquals(ErrorCategory.VALIDATION, exception.getCategory());
         assertTrue(exception.getMessage().contains("External storage downloads (S3) must use HTTPS"));
+    }
+
+    @Test
+    void testClientConfig_CustomHttpClientBuilder() {
+        java.net.http.HttpClient.Builder customBuilder = java.net.http.HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(12));
+
+        ClientConfig config = new ClientConfig.Builder("test-key")
+                .apiBaseUrl("https://api.xyo.financial")
+                .httpClientBuilder(customBuilder)
+                .build();
+
+        assertNotNull(config.getHttpClientBuilder());
+        XyoClient customClient = new XyoClient(config);
+        assertNotNull(customClient);
+    }
+
+    @Test
+    void testClientConfig_DeprecatedHttpClientThrows() {
+        java.net.http.HttpClient dummyClient = java.net.http.HttpClient.newHttpClient();
+        assertThrows(UnsupportedOperationException.class, () -> {
+            new ClientConfig.Builder("test-key").httpClient(dummyClient);
+        });
     }
 }

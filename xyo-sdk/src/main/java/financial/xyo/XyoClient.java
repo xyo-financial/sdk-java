@@ -37,6 +37,11 @@ import java.util.function.Supplier;
  * <p>
  * This client provides support for enriching single transactions, running bulk asynchronous transaction
  * collections, checking collection statuses, and downloading enrichment result archives.
+ * <p>
+ * <b>Note for Java 17 runtimes:</b> {@link java.net.http.HttpClient} does not implement {@link AutoCloseable}
+ * in Java 17 (introduced in Java 21). {@code XyoClient} should be instantiated as a long-lived singleton
+ * service component in your application. Creating short-lived or per-request instances on Java 17 may lead to
+ * thread starvation and connection resource exhaustion.
  */
 public class XyoClient implements AutoCloseable {
 
@@ -134,8 +139,8 @@ public class XyoClient implements AutoCloseable {
         ApiClient apiClient = new ApiClient();
         apiClient.updateBaseUri(this.apiBaseUrl);
 
-        if (config.getHttpClient() != null) {
-            apiClient.setHttpClientBuilder(config.getHttpClient().newBuilder());
+        if (config.getHttpClientBuilder() != null) {
+            apiClient.setHttpClientBuilder(config.getHttpClientBuilder());
         } else {
             // Enforce minimum TLS 1.2+ version (PCI-DSS 4.0 §4.2.1 compliance)
             SSLParameters sslParams = new SSLParameters();
@@ -691,6 +696,10 @@ public class XyoClient implements AutoCloseable {
 
     /**
      * Closes this client and releases any underlying resources.
+     * <p>
+     * Note for Java 17 runtimes: {@link java.net.http.HttpClient} does not implement {@link AutoCloseable}
+     * in Java 17 (introduced in Java 21). {@code XyoClient} should be instantiated as a long-lived singleton
+     * service component. Creating short-lived instances in Java 17 may lead to thread starvation.
      */
     @Override
     public void close() {
@@ -698,6 +707,7 @@ public class XyoClient implements AutoCloseable {
             try {
                 ((AutoCloseable) this.httpClient).close();
             } catch (Exception e) {
+                System.err.println("[WARN] financial.xyo.XyoClient: Failed to cleanly close underlying HTTP client: " + e.getMessage());
                 throw new XyoException(ErrorCategory.TRANSPORT, "Failed to cleanly close HTTP client: " + e.getMessage(), e);
             }
         }

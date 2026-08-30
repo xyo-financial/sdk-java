@@ -41,7 +41,7 @@ public final class ClientConfig {
     private final long requestTimeoutMs;
     private final long maxResponseBytes;
     private final boolean allowInsecureHttp;
-    private final @Nullable HttpClient httpClient;
+    private final HttpClient.@Nullable Builder httpClientBuilder;
 
     /**
      * Resolves the default API base URL, checking the {@value #ENV_API_BASE_URL} environment variable first.
@@ -75,7 +75,7 @@ public final class ClientConfig {
         this.requestTimeoutMs = builder.requestTimeoutMs;
         this.maxResponseBytes = builder.maxResponseBytes;
         this.allowInsecureHttp = builder.allowInsecureHttp;
-        this.httpClient = builder.httpClient;
+        this.httpClientBuilder = builder.httpClientBuilder;
     }
 
     /**
@@ -93,14 +93,14 @@ public final class ClientConfig {
     /**
      * Gets the dynamic API key supplier, if configured.
      * 
-     * @return the API key supplier, or null if a static key was supplied
+     * @return the key supplier, or null if a static key was configured
      */
     public @Nullable Supplier<String> getApiKeySupplier() {
         return apiKeySupplier;
     }
 
     /**
-     * Gets the API base URL.
+     * Gets the configured API base URL.
      * 
      * @return the base URL
      */
@@ -111,32 +111,32 @@ public final class ClientConfig {
     /**
      * Gets the connection timeout in milliseconds.
      * 
-     * @return the connection timeout
+     * @return connection timeout in ms
      */
     public long getConnectTimeoutMs() {
         return connectTimeoutMs;
     }
 
     /**
-     * Gets the request timeout in milliseconds.
+     * Gets the request/read timeout in milliseconds.
      * 
-     * @return the request timeout
+     * @return request timeout in ms
      */
     public long getRequestTimeoutMs() {
         return requestTimeoutMs;
     }
 
     /**
-     * Gets the maximum allowed response body size in bytes.
+     * Gets the maximum allowed response size in bytes.
      * 
-     * @return the maximum allowed response size
+     * @return maximum response bytes
      */
     public long getMaxResponseBytes() {
         return maxResponseBytes;
     }
 
     /**
-     * Checks if insecure HTTP connections are allowed.
+     * Indicates whether insecure HTTP connections are allowed.
      * 
      * @return true if insecure HTTP is allowed
      */
@@ -145,12 +145,12 @@ public final class ClientConfig {
     }
 
     /**
-     * Gets the custom {@link HttpClient}.
+     * Gets the custom {@link HttpClient.Builder}, if configured.
      * 
-     * @return the client
+     * @return the client builder, or null if default builder is used
      */
-    public @Nullable HttpClient getHttpClient() {
-        return httpClient;
+    public HttpClient.@Nullable Builder getHttpClientBuilder() {
+        return httpClientBuilder;
     }
 
     /**
@@ -196,7 +196,7 @@ public final class ClientConfig {
         b.requestTimeoutMs = this.requestTimeoutMs;
         b.maxResponseBytes = this.maxResponseBytes;
         b.allowInsecureHttp = this.allowInsecureHttp;
-        b.httpClient = this.httpClient;
+        b.httpClientBuilder = this.httpClientBuilder;
         return b;
     }
 
@@ -227,7 +227,7 @@ public final class ClientConfig {
                 ", requestTimeoutMs=" + requestTimeoutMs +
                 ", maxResponseBytes=" + maxResponseBytes +
                 ", allowInsecureHttp=" + allowInsecureHttp +
-                ", httpClient=" + httpClient +
+                ", httpClientBuilder=" + (httpClientBuilder != null ? "[CONFIGURED]" : "null") +
                 '}';
     }
 
@@ -242,7 +242,7 @@ public final class ClientConfig {
         private long requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS;
         private long maxResponseBytes = DEFAULT_MAX_RESPONSE_BYTES;
         private boolean allowInsecureHttp = DEFAULT_ALLOW_INSECURE_HTTP;
-        private HttpClient httpClient;
+        private HttpClient.Builder httpClientBuilder;
 
         /**
          * Creates a new Builder instance without authentication parameters.
@@ -352,14 +352,29 @@ public final class ClientConfig {
         }
 
         /**
+         * Sets the custom HttpClient.Builder.
+         * 
+         * @param httpClientBuilder the custom client builder
+         * @return this builder
+         */
+        public Builder httpClientBuilder(HttpClient.@Nullable Builder httpClientBuilder) {
+            this.httpClientBuilder = httpClientBuilder;
+            return this;
+        }
+
+        /**
          * Sets the custom HttpClient.
          * 
          * @param httpClient the custom client
          * @return this builder
+         * @deprecated java.net.http.HttpClient is strictly immutable and cannot be cloned into a builder.
+         *             Use {@link #httpClientBuilder(HttpClient.Builder)} instead.
          */
+        @Deprecated
         public Builder httpClient(HttpClient httpClient) {
-            this.httpClient = httpClient;
-            return this;
+            throw new UnsupportedOperationException(
+                    "java.net.http.HttpClient is strictly immutable and cannot be cloned. " +
+                    "Configure an HttpClient.Builder and pass it via httpClientBuilder(builder) instead.");
         }
 
         /**
