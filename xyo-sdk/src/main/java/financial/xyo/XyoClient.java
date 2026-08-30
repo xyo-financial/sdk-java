@@ -7,6 +7,7 @@ import financial.xyo.api.EnrichmentApi;
 import financial.xyo.model.EnrichTransactionsRequestInner;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.jspecify.annotations.Nullable;
 
 import java.io.FilterInputStream;
 import java.io.IOException;
@@ -57,11 +58,24 @@ public class XyoClient implements AutoCloseable {
     private final String apiBaseUrl;
     private final boolean allowInsecureHttp;
     private final long maxResponseBytes;
+    private final long maxDecompressedBytes;
     private final int maxTarEntries;
     private final HttpClient httpClient;
     private final Duration requestTimeout;
     private final ObjectMapper objectMapper;
     private final EnrichmentApi enrichmentApi;
+
+    private static boolean containsControlCharacters(String s) {
+        if (s == null) return false;
+        int len = s.length();
+        for (int i = 0; i < len; i++) {
+            char c = s.charAt(i);
+            if ((c < 0x20 && c != '\t') || c == 0x7F) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     private static void validateTraceparent(String traceparent) {
         if (traceparent != null && !TRACEPARENT_PATTERN.matcher(traceparent).matches()) {
@@ -70,7 +84,7 @@ public class XyoClient implements AutoCloseable {
     }
 
     private static void validateApiUser(String apiUser) {
-        if (apiUser != null && apiUser.chars().anyMatch(c -> (c < 0x20 && c != '\t') || c == 0x7F)) {
+        if (containsControlCharacters(apiUser)) {
             throw new XyoException(ErrorCategory.VALIDATION, "apiUser must not contain control characters");
         }
     }
@@ -79,7 +93,7 @@ public class XyoClient implements AutoCloseable {
         if (key == null || key.trim().isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "API key must not be null or empty");
         }
-        if (key.chars().anyMatch(c -> (c < 0x20 && c != '\t') || c == 0x7F)) {
+        if (containsControlCharacters(key)) {
             throw new XyoException(ErrorCategory.VALIDATION, "API key must not contain control characters");
         }
     }
@@ -119,6 +133,7 @@ public class XyoClient implements AutoCloseable {
 
         this.allowInsecureHttp = config.isAllowInsecureHttp();
         this.maxResponseBytes = config.getMaxResponseBytes();
+        this.maxDecompressedBytes = config.getMaxDecompressedBytes();
         this.maxTarEntries = config.getMaxTarEntries();
 
         String baseUrl = config.getApiBaseUrl();
@@ -460,8 +475,58 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if validation checks fail, the HTTP download fails, decompression fails, or parsing fails
      */
     public List<EnrichmentResponse> downloadEnrichmentCollection(String downloadUrl, UUID correlationId, String traceparent) throws XyoException {
+        List<EnrichmentResponse> results = new ArrayList<>();
+        downloadEnrichmentCollectionStream(downloadUrl, correlationId, traceparent, results::add);
+        return results;
+    }
+
+    /**
+     * Streams unpacked enrichment results iteratively to a consumer without accumulating the entire batch in memory.
+     *
+     * @param downloadUrl the download link URL returned in the bulk collection response
+     * @param consumer consumer callback receiving each parsed {@link EnrichmentResponse}
+     * @throws XyoException if download or unpacking fails
+     */
+    public void downloadEnrichmentCollectionStream(String downloadUrl, java.util.function.Consumer<EnrichmentResponse> consumer) throws XyoException {
+        downloadEnrichmentCollectionStream(downloadUrl, (RequestOptions) null, consumer);
+    }
+
+    /**
+     * Streams unpacked enrichment results iteratively to a consumer without accumulating the entire batch in memory.
+     *
+     * @param downloadUrl the download link URL returned in the bulk collection response
+     * @param options per-request options containing correlation ID, traceparent, etc.
+     * @param consumer consumer callback receiving each parsed {@link EnrichmentResponse}
+     * @throws XyoException if download or unpacking fails
+     */
+    public void downloadEnrichmentCollectionStream(
+            String downloadUrl,
+            @Nullable RequestOptions options,
+            java.util.function.Consumer<EnrichmentResponse> consumer) throws XyoException {
+        UUID correlationId = options != null ? options.getCorrelationId() : null;
+        String traceparent = options != null ? options.getTraceparent() : null;
+        downloadEnrichmentCollectionStream(downloadUrl, correlationId, traceparent, consumer);
+    }
+
+    /**
+     * Streams unpacked enrichment results iteratively to a consumer without accumulating the entire batch in memory.
+     *
+     * @param downloadUrl the download link URL returned in the bulk collection response
+     * @param correlationId optional correlation UUID for distributed tracing
+     * @param traceparent optional W3C traceparent header string for APM tracing
+     * @param consumer consumer callback receiving each parsed {@link EnrichmentResponse}
+     * @throws XyoException if validation checks fail, the HTTP download fails, decompression fails, or parsing fails
+     */
+    public void downloadEnrichmentCollectionStream(
+            String downloadUrl,
+            @Nullable UUID correlationId,
+            @Nullable String traceparent,
+            java.util.function.Consumer<EnrichmentResponse> consumer) throws XyoException {
         if (downloadUrl == null || downloadUrl.trim().isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "downloadUrl must not be null or empty");
+        }
+        if (consumer == null) {
+            throw new XyoException(ErrorCategory.VALIDATION, "consumer must not be null");
         }
         validateTraceparent(traceparent);
 
@@ -557,7 +622,6 @@ public class XyoClient implements AutoCloseable {
             throw createHttpException(statusCode, errorBody, response.headers(), null);
         }
 
-        List<EnrichmentResponse> results = new ArrayList<>();
         try (InputStream responseStream = response.body()) {
             if (responseStream == null) {
                 throw new XyoException(ErrorCategory.PARSING, "Response body is null");
@@ -583,8 +647,8 @@ public class XyoClient implements AutoCloseable {
                     : responseStream;
 
             try (GZIPInputStream gzipIn = new GZIPInputStream(boundedRawStream)) {
-                InputStream boundedDecompressedStream = (this.maxResponseBytes > 0)
-                        ? new BoundedInputStream(gzipIn, this.maxResponseBytes, "decompressed archive stream")
+                InputStream boundedDecompressedStream = (this.maxDecompressedBytes > 0)
+                        ? new BoundedInputStream(gzipIn, this.maxDecompressedBytes, "decompressed archive stream")
                         : gzipIn;
 
                 try (TarArchiveInputStream tarIn = new TarArchiveInputStream(boundedDecompressedStream)) {
@@ -610,7 +674,7 @@ public class XyoClient implements AutoCloseable {
                                         EnrichmentResponse.class
                                 );
                                 if (enrichmentResponse != null) {
-                                    results.add(enrichmentResponse);
+                                    consumer.accept(enrichmentResponse);
                                 }
                             } catch (Exception e) {
                                 throw new XyoException(ErrorCategory.PARSING, "Failed to parse JSON entry '" + sanitizeEntryName(entryName) + "': " + e.getMessage(), e);
@@ -624,8 +688,6 @@ public class XyoClient implements AutoCloseable {
         } catch (IOException e) {
             throw new XyoException(ErrorCategory.PARSING, "Failed to decompress gzip response: " + e.getMessage(), e);
         }
-
-        return results;
     }
 
     private static class PayloadTooLargeException extends IOException {

@@ -687,7 +687,8 @@ class XyoClientTest {
         ClientConfig config = new ClientConfig.Builder("test-key")
                 .apiBaseUrl("http://127.0.0.1:" + testServerPort)
                 .allowInsecureHttp(true)
-                .maxResponseBytes(500)
+                .maxResponseBytes(5000)
+                .maxDecompressedBytes(500)
                 .build();
         client = new XyoClient(config);
 
@@ -1438,5 +1439,50 @@ class XyoClientTest {
         EnrichTransactionCollectionResponse colClone = col.toBuilder().link("link-2").build();
         assertEquals("id-1", colClone.getId());
         assertEquals("link-2", colClone.getLink());
+    }
+
+    @Test
+    void testClientConfig_Builder_BoundsValidation() {
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder("key").connectTimeoutMs(-1).build());
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder("key").requestTimeoutMs(-1).build());
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder("key").maxResponseBytes(0).build());
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder("key").maxResponseBytes(-100).build());
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder("key").maxDecompressedBytes(0).build());
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder("key").maxDecompressedBytes(-500).build());
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder("key").maxTarEntries(0).build());
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder("key").maxTarEntries(-10).build());
+    }
+
+    @Test
+    void testDownloadEnrichmentCollectionStream() throws IOException {
+        String json = "{\n" +
+                "  \"merchant\": \"Deliveroo\",\n" +
+                "  \"description\": \"DELIVEROO UK\",\n" +
+                "  \"categories\": [\"Food\"],\n" +
+                "  \"location\": \"London\"\n" +
+                "}";
+
+        Map<String, String> files = new LinkedHashMap<>();
+        files.put("order.json", json);
+        byte[] archiveBytes = createTarGzArchive(files);
+
+        startTestServer(exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "application/gzip");
+            exchange.sendResponseHeaders(200, archiveBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(archiveBytes);
+            }
+        });
+
+        client = createTestClient();
+        List<EnrichmentResponse> streamedResults = new ArrayList<>();
+        client.downloadEnrichmentCollectionStream(
+                "http://127.0.0.1:" + testServerPort + "/v1/enrich/bulk/download/batch-stream",
+                streamedResults::add
+        );
+
+        assertEquals(1, streamedResults.size());
+        assertEquals("Deliveroo", streamedResults.get(0).getMerchant());
+        assertEquals("London", streamedResults.get(0).getLocation());
     }
 }

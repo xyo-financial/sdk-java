@@ -28,8 +28,11 @@ public final class ClientConfig {
     /** The default request timeout in milliseconds (30 seconds). */
     public static final long DEFAULT_REQUEST_TIMEOUT_MS = 30000;
     
-    /** The default maximum allowed response size in bytes (1 MB). */
-    public static final long DEFAULT_MAX_RESPONSE_BYTES = 1024 * 1024;
+    /** The default maximum allowed compressed response size in bytes (10 MB). */
+    public static final long DEFAULT_MAX_RESPONSE_BYTES = 10 * 1024 * 1024;
+
+    /** The default maximum allowed decompressed archive size in bytes (64 MB). */
+    public static final long DEFAULT_MAX_DECOMPRESSED_BYTES = 64 * 1024 * 1024;
     
     /** Default option for allowing insecure HTTP connections. */
     public static final boolean DEFAULT_ALLOW_INSECURE_HTTP = false;
@@ -40,6 +43,7 @@ public final class ClientConfig {
     private final long connectTimeoutMs;
     private final long requestTimeoutMs;
     private final long maxResponseBytes;
+    private final long maxDecompressedBytes;
     private final int maxTarEntries;
     private final boolean allowInsecureHttp;
     private final HttpClient.@Nullable Builder httpClientBuilder;
@@ -75,6 +79,7 @@ public final class ClientConfig {
         this.connectTimeoutMs = builder.connectTimeoutMs;
         this.requestTimeoutMs = builder.requestTimeoutMs;
         this.maxResponseBytes = builder.maxResponseBytes;
+        this.maxDecompressedBytes = builder.maxDecompressedBytes;
         this.maxTarEntries = builder.maxTarEntries;
         this.allowInsecureHttp = builder.allowInsecureHttp;
         this.httpClientBuilder = builder.httpClientBuilder;
@@ -129,12 +134,21 @@ public final class ClientConfig {
     }
 
     /**
-     * Gets the maximum allowed response size in bytes.
+     * Gets the maximum allowed compressed response size in bytes.
      * 
      * @return maximum response bytes
      */
     public long getMaxResponseBytes() {
         return maxResponseBytes;
+    }
+
+    /**
+     * Gets the maximum allowed decompressed archive size in bytes.
+     * 
+     * @return maximum decompressed bytes
+     */
+    public long getMaxDecompressedBytes() {
+        return maxDecompressedBytes;
     }
 
     /**
@@ -206,12 +220,19 @@ public final class ClientConfig {
         b.connectTimeoutMs = this.connectTimeoutMs;
         b.requestTimeoutMs = this.requestTimeoutMs;
         b.maxResponseBytes = this.maxResponseBytes;
+        b.maxDecompressedBytes = this.maxDecompressedBytes;
         b.maxTarEntries = this.maxTarEntries;
         b.allowInsecureHttp = this.allowInsecureHttp;
         b.httpClientBuilder = this.httpClientBuilder;
         return b;
     }
 
+    /**
+     * Compares this configuration with another for structural and credential equality.
+     * <p>
+     * <b>Note on dynamic suppliers:</b> Configurations using {@link Supplier} for secret rotation
+     * or custom {@link HttpClient.Builder} evaluate those functional components by reference identity.
+     */
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -220,6 +241,7 @@ public final class ClientConfig {
         return connectTimeoutMs == that.connectTimeoutMs &&
                 requestTimeoutMs == that.requestTimeoutMs &&
                 maxResponseBytes == that.maxResponseBytes &&
+                maxDecompressedBytes == that.maxDecompressedBytes &&
                 maxTarEntries == that.maxTarEntries &&
                 allowInsecureHttp == that.allowInsecureHttp &&
                 Objects.equals(apiBaseUrl, that.apiBaseUrl) &&
@@ -229,7 +251,7 @@ public final class ClientConfig {
 
     @Override
     public int hashCode() {
-        return Objects.hash(apiBaseUrl, apiKey, apiKeySupplier, connectTimeoutMs, requestTimeoutMs, maxResponseBytes, maxTarEntries, allowInsecureHttp);
+        return Objects.hash(apiBaseUrl, apiKey, apiKeySupplier, connectTimeoutMs, requestTimeoutMs, maxResponseBytes, maxDecompressedBytes, maxTarEntries, allowInsecureHttp);
     }
 
     @Override
@@ -241,6 +263,7 @@ public final class ClientConfig {
                 ", connectTimeoutMs=" + connectTimeoutMs +
                 ", requestTimeoutMs=" + requestTimeoutMs +
                 ", maxResponseBytes=" + maxResponseBytes +
+                ", maxDecompressedBytes=" + maxDecompressedBytes +
                 ", maxTarEntries=" + maxTarEntries +
                 ", allowInsecureHttp=" + allowInsecureHttp +
                 ", httpClientBuilder=" + (httpClientBuilder != null ? "[CONFIGURED]" : "null") +
@@ -257,6 +280,7 @@ public final class ClientConfig {
         private long connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
         private long requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS;
         private long maxResponseBytes = DEFAULT_MAX_RESPONSE_BYTES;
+        private long maxDecompressedBytes = DEFAULT_MAX_DECOMPRESSED_BYTES;
         private int maxTarEntries = DEFAULT_MAX_TAR_ENTRIES;
         private boolean allowInsecureHttp = DEFAULT_ALLOW_INSECURE_HTTP;
         private HttpClient.Builder httpClientBuilder;
@@ -325,7 +349,7 @@ public final class ClientConfig {
         }
 
         /**
-         * Sets the connection timeout.
+         * Sets the connection timeout in milliseconds.
          * 
          * @param connectTimeoutMs connection timeout in milliseconds
          * @return this builder
@@ -336,7 +360,7 @@ public final class ClientConfig {
         }
 
         /**
-         * Sets the request timeout.
+         * Sets the request timeout in milliseconds.
          * 
          * @param requestTimeoutMs request timeout in milliseconds
          * @return this builder
@@ -347,13 +371,24 @@ public final class ClientConfig {
         }
 
         /**
-         * Sets the maximum response size.
+         * Sets the maximum allowed compressed response size in bytes.
          * 
          * @param maxResponseBytes maximum response size in bytes
          * @return this builder
          */
         public Builder maxResponseBytes(long maxResponseBytes) {
             this.maxResponseBytes = maxResponseBytes;
+            return this;
+        }
+
+        /**
+         * Sets the maximum allowed decompressed archive size in bytes.
+         * 
+         * @param maxDecompressedBytes maximum decompressed size in bytes
+         * @return this builder
+         */
+        public Builder maxDecompressedBytes(long maxDecompressedBytes) {
+            this.maxDecompressedBytes = maxDecompressedBytes;
             return this;
         }
 
@@ -418,6 +453,21 @@ public final class ClientConfig {
             }
             if (hasKey && hasSupplier) {
                 throw new IllegalArgumentException("Provide either a static apiKey or an apiKeySupplier, not both");
+            }
+            if (this.connectTimeoutMs < 0) {
+                throw new IllegalArgumentException("connectTimeoutMs must not be negative");
+            }
+            if (this.requestTimeoutMs < 0) {
+                throw new IllegalArgumentException("requestTimeoutMs must not be negative");
+            }
+            if (this.maxResponseBytes <= 0) {
+                throw new IllegalArgumentException("maxResponseBytes must be strictly positive");
+            }
+            if (this.maxDecompressedBytes <= 0) {
+                throw new IllegalArgumentException("maxDecompressedBytes must be strictly positive");
+            }
+            if (this.maxTarEntries <= 0) {
+                throw new IllegalArgumentException("maxTarEntries must be strictly positive");
             }
             return new ClientConfig(this);
         }
