@@ -11,7 +11,7 @@ import java.util.Objects;
  * Result returned for a successful transaction enrichment request.
  * Contains identified merchant, description, categories, logo and location details.
  */
-public class EnrichmentResponse {
+public final class EnrichmentResponse {
     private final String merchant;
     private final String description;
     private final List<String> categories;
@@ -115,6 +115,18 @@ public class EnrichmentResponse {
     @Override
     public int hashCode() {
         return Objects.hash(merchant, description, categories, logo, location, address);
+    }
+
+    @Override
+    public String toString() {
+        return "EnrichmentResponse{" +
+                "merchant='" + merchant + '\'' +
+                ", description='" + description + '\'' +
+                ", categories=" + categories +
+                ", logo='" + logo + '\'' +
+                ", location='" + location + '\'' +
+                ", address='" + address + '\'' +
+                '}';
     }
 
     /**

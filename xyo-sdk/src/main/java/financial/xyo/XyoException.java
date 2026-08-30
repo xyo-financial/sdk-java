@@ -1,5 +1,7 @@
 package financial.xyo;
 
+import org.jspecify.annotations.Nullable;
+
 /**
  * Base exception thrown for all errors encountered when using the XYO.Financial SDK.
  * Includes information about error categories, HTTP status codes, and HTTP response bodies.
@@ -8,11 +10,11 @@ public class XyoException extends RuntimeException {
     private final ErrorCategory category;
     private final int httpStatusCode;
     private final int transportCode;
-    private final String responseBody;
-    private final Long retryAfter;
-    private final Long rateLimitLimit;
-    private final Long rateLimitRemaining;
-    private final Long rateLimitReset;
+    private final @Nullable String responseBody;
+    private final @Nullable Long retryAfter;
+    private final @Nullable Long rateLimitLimit;
+    private final @Nullable Long rateLimitRemaining;
+    private final @Nullable Long rateLimitReset;
 
     /**
      * Constructs a new exception with category and message.
@@ -31,7 +33,7 @@ public class XyoException extends RuntimeException {
      * @param message the descriptive error message
      * @param cause the root throwable cause
      */
-    public XyoException(ErrorCategory category, String message, Throwable cause) {
+    public XyoException(ErrorCategory category, String message, @Nullable Throwable cause) {
         this(category, message, cause, 0, 0, null, null, null, null, null);
     }
 
@@ -56,7 +58,7 @@ public class XyoException extends RuntimeException {
      * @param transportCode the transport error code
      * @param responseBody the raw HTTP error body returned by the API
      */
-    public XyoException(ErrorCategory category, String message, int httpStatusCode, int transportCode, String responseBody) {
+    public XyoException(ErrorCategory category, String message, int httpStatusCode, int transportCode, @Nullable String responseBody) {
         this(category, message, null, httpStatusCode, transportCode, responseBody, null, null, null, null);
     }
 
@@ -70,7 +72,7 @@ public class XyoException extends RuntimeException {
      * @param transportCode the transport error code
      * @param responseBody the raw HTTP error body returned by the API
      */
-    public XyoException(ErrorCategory category, String message, Throwable cause, int httpStatusCode, int transportCode, String responseBody) {
+    public XyoException(ErrorCategory category, String message, @Nullable Throwable cause, int httpStatusCode, int transportCode, @Nullable String responseBody) {
         this(category, message, cause, httpStatusCode, transportCode, responseBody, null, null, null, null);
     }
 
@@ -87,7 +89,7 @@ public class XyoException extends RuntimeException {
      * @param rateLimitRemaining the RateLimit-Remaining header value
      * @param rateLimitReset the RateLimit-Reset header value
      */
-    public XyoException(ErrorCategory category, String message, int httpStatusCode, int transportCode, String responseBody, Long retryAfter, Long rateLimitLimit, Long rateLimitRemaining, Long rateLimitReset) {
+    public XyoException(ErrorCategory category, String message, int httpStatusCode, int transportCode, @Nullable String responseBody, @Nullable Long retryAfter, @Nullable Long rateLimitLimit, @Nullable Long rateLimitRemaining, @Nullable Long rateLimitReset) {
         this(category, message, null, httpStatusCode, transportCode, responseBody, retryAfter, rateLimitLimit, rateLimitRemaining, rateLimitReset);
     }
 
@@ -105,7 +107,7 @@ public class XyoException extends RuntimeException {
      * @param rateLimitRemaining the RateLimit-Remaining header value
      * @param rateLimitReset the RateLimit-Reset header value
      */
-    public XyoException(ErrorCategory category, String message, Throwable cause, int httpStatusCode, int transportCode, String responseBody, Long retryAfter, Long rateLimitLimit, Long rateLimitRemaining, Long rateLimitReset) {
+    public XyoException(ErrorCategory category, String message, @Nullable Throwable cause, int httpStatusCode, int transportCode, @Nullable String responseBody, @Nullable Long retryAfter, @Nullable Long rateLimitLimit, @Nullable Long rateLimitRemaining, @Nullable Long rateLimitReset) {
         super(message, cause);
         this.category = category;
         this.httpStatusCode = httpStatusCode;
@@ -115,6 +117,31 @@ public class XyoException extends RuntimeException {
         this.rateLimitLimit = rateLimitLimit;
         this.rateLimitRemaining = rateLimitRemaining;
         this.rateLimitReset = rateLimitReset;
+    }
+
+    // Static factory methods for convenient instantiation
+    public static XyoException validation(String message) {
+        return new XyoException(ErrorCategory.VALIDATION, message);
+    }
+
+    public static XyoException validation(String message, Throwable cause) {
+        return new XyoException(ErrorCategory.VALIDATION, message, cause);
+    }
+
+    public static XyoException http(String message, int httpStatusCode, @Nullable String responseBody) {
+        return new XyoException(ErrorCategory.HTTP, message, null, httpStatusCode, 0, responseBody, null, null, null, null);
+    }
+
+    public static XyoException transport(String message, Throwable cause) {
+        return new XyoException(ErrorCategory.TRANSPORT, message, cause);
+    }
+
+    public static XyoException parsing(String message, Throwable cause) {
+        return new XyoException(ErrorCategory.PARSING, message, cause);
+    }
+
+    public static XyoException rateLimit(String message, int httpStatusCode, @Nullable Long retryAfter, @Nullable Long rateLimitLimit, @Nullable Long rateLimitRemaining, @Nullable Long rateLimitReset) {
+        return new XyoException(ErrorCategory.RATE_LIMIT, message, null, httpStatusCode, 0, null, retryAfter, rateLimitLimit, rateLimitRemaining, rateLimitReset);
     }
 
     /**
@@ -149,7 +176,7 @@ public class XyoException extends RuntimeException {
      * 
      * @return the error response body
      */
-    public String getResponseBody() {
+    public @Nullable String getResponseBody() {
         return responseBody;
     }
 
@@ -158,7 +185,7 @@ public class XyoException extends RuntimeException {
      * 
      * @return retry after value in seconds, or null if absent
      */
-    public Long getRetryAfter() {
+    public @Nullable Long getRetryAfter() {
         return retryAfter;
     }
 
@@ -167,7 +194,7 @@ public class XyoException extends RuntimeException {
      * 
      * @return rate limit limit, or null if absent
      */
-    public Long getRateLimitLimit() {
+    public @Nullable Long getRateLimitLimit() {
         return rateLimitLimit;
     }
 
@@ -176,7 +203,7 @@ public class XyoException extends RuntimeException {
      * 
      * @return remaining rate limit quota, or null if absent
      */
-    public Long getRateLimitRemaining() {
+    public @Nullable Long getRateLimitRemaining() {
         return rateLimitRemaining;
     }
 
@@ -185,7 +212,7 @@ public class XyoException extends RuntimeException {
      * 
      * @return rate limit reset time in seconds, or null if absent
      */
-    public Long getRateLimitReset() {
+    public @Nullable Long getRateLimitReset() {
         return rateLimitReset;
     }
 }

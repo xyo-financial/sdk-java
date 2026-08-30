@@ -8,7 +8,7 @@ import java.util.Objects;
  * Result returned when submitting a bulk asynchronous transaction collection request.
  * Contains batch ID and tracing URL.
  */
-public class EnrichTransactionCollectionResponse {
+public final class EnrichTransactionCollectionResponse {
     private final String id;
     private final String link;
 
@@ -55,6 +55,14 @@ public class EnrichTransactionCollectionResponse {
     @Override
     public int hashCode() {
         return Objects.hash(id, link);
+    }
+
+    @Override
+    public String toString() {
+        return "EnrichTransactionCollectionResponse{" +
+                "id='" + id + '\'' +
+                ", link='" + link + '\'' +
+                '}';
     }
 
     /**

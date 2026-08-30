@@ -1,13 +1,17 @@
 package financial.xyo;
 
+import org.jspecify.annotations.Nullable;
+
 import java.net.http.HttpClient;
+import java.util.Objects;
+import java.util.function.Supplier;
 
 /**
- * Configuration options for the {@link XyoClient}.
+ * Immutable configuration options for the {@link XyoClient}.
  * <p>
- * Use the {@link Builder} to construct a new immutable-safe configuration.
+ * Use {@link #builder(String)} or {@link #builder(Supplier)} to construct instances.
  */
-public class ClientConfig {
+public final class ClientConfig {
     
     /** The default XYO API base URL. */
     public static final String DEFAULT_API_BASE_URL = "https://api.xyo.financial";
@@ -30,15 +34,14 @@ public class ClientConfig {
     /** Default option for allowing insecure HTTP connections. */
     public static final boolean DEFAULT_ALLOW_INSECURE_HTTP = false;
 
-    private String apiKey;
-    private java.util.function.Supplier<String> apiKeySupplier;
-    private String apiBaseUrl = resolveDefaultBaseUrl();
-
-    private long connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
-    private long requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS;
-    private long maxResponseBytes = DEFAULT_MAX_RESPONSE_BYTES;
-    private boolean allowInsecureHttp = DEFAULT_ALLOW_INSECURE_HTTP;
-    private HttpClient httpClient;
+    private final @Nullable String apiKey;
+    private final @Nullable Supplier<String> apiKeySupplier;
+    private final String apiBaseUrl;
+    private final long connectTimeoutMs;
+    private final long requestTimeoutMs;
+    private final long maxResponseBytes;
+    private final boolean allowInsecureHttp;
+    private final @Nullable HttpClient httpClient;
 
     /**
      * Resolves the default API base URL, checking the {@value #ENV_API_BASE_URL} environment variable first.
@@ -54,23 +57,33 @@ public class ClientConfig {
     }
 
     /**
-     * Constructs a new ClientConfig with the specified API key.
+     * Constructs a new ClientConfig with the specified API key and default settings.
      * 
      * @param apiKey the API key for authentication
-     * @deprecated Use {@link Builder} instead to ensure robust initialization.
+     * @deprecated Use {@link #builder(String)} instead to ensure robust initialization.
      */
     @Deprecated
     public ClientConfig(String apiKey) {
-        this.apiKey = apiKey;
-        this.apiBaseUrl = resolveDefaultBaseUrl();
+        this(new Builder(apiKey));
+    }
+
+    private ClientConfig(Builder builder) {
+        this.apiKey = builder.apiKey;
+        this.apiKeySupplier = builder.apiKeySupplier;
+        this.apiBaseUrl = builder.apiBaseUrl != null ? builder.apiBaseUrl : resolveDefaultBaseUrl();
+        this.connectTimeoutMs = builder.connectTimeoutMs;
+        this.requestTimeoutMs = builder.requestTimeoutMs;
+        this.maxResponseBytes = builder.maxResponseBytes;
+        this.allowInsecureHttp = builder.allowInsecureHttp;
+        this.httpClient = builder.httpClient;
     }
 
     /**
-     * Gets the API key. If an {@link java.util.function.Supplier} was configured, executes the supplier to fetch the current key.
+     * Gets the API key. If an {@link Supplier} was configured, executes the supplier to fetch the current key.
      * 
      * @return the API key
      */
-    public String getApiKey() {
+    public @Nullable String getApiKey() {
         if (apiKeySupplier != null) {
             return apiKeySupplier.get();
         }
@@ -82,127 +95,163 @@ public class ClientConfig {
      * 
      * @return the API key supplier, or null if a static key was supplied
      */
-    public java.util.function.Supplier<String> getApiKeySupplier() {
+    public @Nullable Supplier<String> getApiKeySupplier() {
         return apiKeySupplier;
     }
-
-    /**
-     * Sets the API key.
-     * 
-     * @param apiKey the API key
-     * @deprecated Use {@link Builder} configuration.
-     */
-    @Deprecated
-    public void setApiKey(String apiKey) { this.apiKey = apiKey; }
 
     /**
      * Gets the API base URL.
      * 
      * @return the base URL
      */
-    public String getApiBaseUrl() { return apiBaseUrl; }
-
-    /**
-     * Sets the API base URL.
-     * 
-     * @param apiBaseUrl the base URL
-     * @deprecated Use {@link Builder} configuration.
-     */
-    @Deprecated
-    public void setApiBaseUrl(String apiBaseUrl) { this.apiBaseUrl = apiBaseUrl; }
+    public String getApiBaseUrl() {
+        return apiBaseUrl;
+    }
 
     /**
      * Gets the connection timeout in milliseconds.
      * 
      * @return the connection timeout
      */
-    public long getConnectTimeoutMs() { return connectTimeoutMs; }
-
-    /**
-     * Sets the connection timeout in milliseconds.
-     * 
-     * @param connectTimeoutMs the connection timeout
-     * @deprecated Use {@link Builder} configuration.
-     */
-    @Deprecated
-    public void setConnectTimeoutMs(long connectTimeoutMs) { this.connectTimeoutMs = connectTimeoutMs; }
+    public long getConnectTimeoutMs() {
+        return connectTimeoutMs;
+    }
 
     /**
      * Gets the request timeout in milliseconds.
      * 
      * @return the request timeout
      */
-    public long getRequestTimeoutMs() { return requestTimeoutMs; }
-
-    /**
-     * Sets the request timeout in milliseconds.
-     * 
-     * @param requestTimeoutMs the request timeout
-     * @deprecated Use {@link Builder} configuration.
-     */
-    @Deprecated
-    public void setRequestTimeoutMs(long requestTimeoutMs) { this.requestTimeoutMs = requestTimeoutMs; }
+    public long getRequestTimeoutMs() {
+        return requestTimeoutMs;
+    }
 
     /**
      * Gets the maximum allowed response body size in bytes.
      * 
      * @return the maximum allowed response size
      */
-    public long getMaxResponseBytes() { return maxResponseBytes; }
-
-    /**
-     * Sets the maximum allowed response body size in bytes.
-     * 
-     * @param maxResponseBytes the maximum allowed response size
-     * @deprecated Use {@link Builder} configuration.
-     */
-    @Deprecated
-    public void setMaxResponseBytes(long maxResponseBytes) { this.maxResponseBytes = maxResponseBytes; }
+    public long getMaxResponseBytes() {
+        return maxResponseBytes;
+    }
 
     /**
      * Checks if insecure HTTP connections are allowed.
      * 
      * @return true if insecure HTTP is allowed
      */
-    public boolean isAllowInsecureHttp() { return allowInsecureHttp; }
-
-    /**
-     * Sets whether to allow insecure HTTP connections.
-     * 
-     * @param allowInsecureHttp true to allow insecure HTTP
-     * @deprecated Use {@link Builder} configuration.
-     */
-    @Deprecated
-    public void setAllowInsecureHttp(boolean allowInsecureHttp) { this.allowInsecureHttp = allowInsecureHttp; }
+    public boolean isAllowInsecureHttp() {
+        return allowInsecureHttp;
+    }
 
     /**
      * Gets the custom {@link HttpClient}.
      * 
      * @return the client
      */
-    public HttpClient getHttpClient() { return httpClient; }
+    public @Nullable HttpClient getHttpClient() {
+        return httpClient;
+    }
 
     /**
-     * Sets the custom {@link HttpClient}.
+     * Creates a new empty {@link Builder}.
      * 
-     * @param httpClient the custom client
-     * @deprecated Use {@link Builder} configuration.
+     * @return a new Builder
      */
-    @Deprecated
-    public void setHttpClient(HttpClient httpClient) { this.httpClient = httpClient; }
+    public static Builder builder() {
+        return new Builder();
+    }
 
     /**
-     * Builder helper for constructing {@link ClientConfig} objects.
+     * Creates a new {@link Builder} with the specified static API key.
+     * 
+     * @param apiKey the API key
+     * @return a new Builder
+     */
+    public static Builder builder(String apiKey) {
+        return new Builder(apiKey);
+    }
+
+    /**
+     * Creates a new {@link Builder} with the specified dynamic API key supplier.
+     * 
+     * @param apiKeySupplier supplier providing current API keys
+     * @return a new Builder
+     */
+    public static Builder builder(Supplier<String> apiKeySupplier) {
+        return new Builder(apiKeySupplier);
+    }
+
+    /**
+     * Creates a new {@link Builder} initialized with values from this instance.
+     * 
+     * @return a pre-populated Builder
+     */
+    public Builder toBuilder() {
+        Builder b = new Builder();
+        b.apiKey = this.apiKey;
+        b.apiKeySupplier = this.apiKeySupplier;
+        b.apiBaseUrl = this.apiBaseUrl;
+        b.connectTimeoutMs = this.connectTimeoutMs;
+        b.requestTimeoutMs = this.requestTimeoutMs;
+        b.maxResponseBytes = this.maxResponseBytes;
+        b.allowInsecureHttp = this.allowInsecureHttp;
+        b.httpClient = this.httpClient;
+        return b;
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (o == null || getClass() != o.getClass()) return false;
+        ClientConfig that = (ClientConfig) o;
+        return connectTimeoutMs == that.connectTimeoutMs &&
+                requestTimeoutMs == that.requestTimeoutMs &&
+                maxResponseBytes == that.maxResponseBytes &&
+                allowInsecureHttp == that.allowInsecureHttp &&
+                Objects.equals(apiKey, that.apiKey) &&
+                Objects.equals(apiKeySupplier, that.apiKeySupplier) &&
+                Objects.equals(apiBaseUrl, that.apiBaseUrl) &&
+                Objects.equals(httpClient, that.httpClient);
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash(apiKey, apiKeySupplier, apiBaseUrl, connectTimeoutMs, requestTimeoutMs, maxResponseBytes, allowInsecureHttp, httpClient);
+    }
+
+    @Override
+    public String toString() {
+        return "ClientConfig{" +
+                "apiKey=" + (apiKey != null ? "[REDACTED]" : "null") +
+                ", apiKeySupplier=" + (apiKeySupplier != null ? "[CONFIGURED]" : "null") +
+                ", apiBaseUrl='" + apiBaseUrl + '\'' +
+                ", connectTimeoutMs=" + connectTimeoutMs +
+                ", requestTimeoutMs=" + requestTimeoutMs +
+                ", maxResponseBytes=" + maxResponseBytes +
+                ", allowInsecureHttp=" + allowInsecureHttp +
+                ", httpClient=" + httpClient +
+                '}';
+    }
+
+    /**
+     * Builder helper for constructing immutable {@link ClientConfig} objects.
      */
     public static class Builder {
         private String apiKey;
-        private java.util.function.Supplier<String> apiKeySupplier;
+        private Supplier<String> apiKeySupplier;
         private String apiBaseUrl = resolveDefaultBaseUrl();
         private long connectTimeoutMs = DEFAULT_CONNECT_TIMEOUT_MS;
         private long requestTimeoutMs = DEFAULT_REQUEST_TIMEOUT_MS;
         private long maxResponseBytes = DEFAULT_MAX_RESPONSE_BYTES;
         private boolean allowInsecureHttp = DEFAULT_ALLOW_INSECURE_HTTP;
         private HttpClient httpClient;
+
+        /**
+         * Creates a new Builder instance without authentication parameters.
+         */
+        public Builder() {
+        }
 
         /**
          * Creates a new Builder instance with the specified API key.
@@ -218,7 +267,7 @@ public class ClientConfig {
          * 
          * @param apiKeySupplier supplier providing current API keys
          */
-        public Builder(java.util.function.Supplier<String> apiKeySupplier) {
+        public Builder(Supplier<String> apiKeySupplier) {
             this.apiKeySupplier = apiKeySupplier;
         }
 
@@ -239,7 +288,7 @@ public class ClientConfig {
          * @param apiKeySupplier the dynamic key supplier
          * @return this builder
          */
-        public Builder apiKeySupplier(java.util.function.Supplier<String> apiKeySupplier) {
+        public Builder apiKeySupplier(Supplier<String> apiKeySupplier) {
             this.apiKeySupplier = apiKeySupplier;
             return this;
         }
@@ -256,7 +305,7 @@ public class ClientConfig {
         }
 
         /**
-         * Sets the connect timeout.
+         * Sets the connection timeout.
          * 
          * @param connectTimeoutMs connection timeout in milliseconds
          * @return this builder
@@ -319,15 +368,7 @@ public class ClientConfig {
             if ((this.apiKey == null || this.apiKey.trim().isEmpty()) && this.apiKeySupplier == null) {
                 throw new IllegalArgumentException("apiKey or apiKeySupplier must be provided");
             }
-            ClientConfig config = new ClientConfig(apiKey);
-            config.apiKeySupplier = this.apiKeySupplier;
-            config.apiBaseUrl = this.apiBaseUrl;
-            config.connectTimeoutMs = this.connectTimeoutMs;
-            config.requestTimeoutMs = this.requestTimeoutMs;
-            config.maxResponseBytes = this.maxResponseBytes;
-            config.allowInsecureHttp = this.allowInsecureHttp;
-            config.httpClient = this.httpClient;
-            return config;
+            return new ClientConfig(this);
         }
     }
 }

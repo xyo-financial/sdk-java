@@ -211,14 +211,12 @@ class XyoClientTest {
     }
 
     @Test
-    @SuppressWarnings("deprecation")
     void testClientConfigValidation() {
         assertThrows(XyoException.class, () -> new XyoClient(null));
-        assertThrows(XyoException.class, () -> new XyoClient(new ClientConfig(null)));
-        assertThrows(XyoException.class, () -> new XyoClient(new ClientConfig("")));
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder((String) null).build());
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder("").build());
 
-        ClientConfig confNoUrl = new ClientConfig("key");
-        confNoUrl.setApiBaseUrl("");
+        ClientConfig confNoUrl = new ClientConfig.Builder("key").apiBaseUrl("").build();
         assertThrows(XyoException.class, () -> new XyoClient(confNoUrl));
     }
 
@@ -244,30 +242,35 @@ class XyoClientTest {
     }
 
     @Test
-    @SuppressWarnings("deprecation")
-    void testClientConfigDoesNotMutate() {
-        ClientConfig mutableConfig = new ClientConfig("key");
-        mutableConfig.setApiBaseUrl("https://api.xyo.financial///");
+    void testClientConfigImmutability() {
+        ClientConfig config = new ClientConfig.Builder("key")
+                .apiBaseUrl("https://api.xyo.financial///")
+                .build();
 
-        new XyoClient(mutableConfig);
+        new XyoClient(config);
 
         // Assert that the original config remains untouched
-        assertEquals("https://api.xyo.financial///", mutableConfig.getApiBaseUrl());
+        assertEquals("https://api.xyo.financial///", config.getApiBaseUrl());
+
+        // Verify toBuilder allows creating modified clone without affecting original
+        ClientConfig copy = config.toBuilder().apiBaseUrl("https://other.xyo.financial").build();
+        assertEquals("https://api.xyo.financial///", config.getApiBaseUrl());
+        assertEquals("https://other.xyo.financial", copy.getApiBaseUrl());
     }
 
     @Test
-    @SuppressWarnings("deprecation")
     void testEnforceSecureHttp() {
-        ClientConfig insecureConf = new ClientConfig("key");
-        insecureConf.setApiBaseUrl("http://api.xyo.financial");
-        insecureConf.setAllowInsecureHttp(false);
+        ClientConfig insecureConf = new ClientConfig.Builder("key")
+                .apiBaseUrl("http://api.xyo.financial")
+                .allowInsecureHttp(false)
+                .build();
 
         XyoException exception = assertThrows(XyoException.class, () -> new XyoClient(insecureConf));
         assertEquals(ErrorCategory.VALIDATION, exception.getCategory());
 
         // Should allow if explicitly configured
-        insecureConf.setAllowInsecureHttp(true);
-        assertDoesNotThrow(() -> new XyoClient(insecureConf));
+        ClientConfig allowedConf = insecureConf.toBuilder().allowInsecureHttp(true).build();
+        assertDoesNotThrow(() -> new XyoClient(allowedConf));
     }
 
     @Test
@@ -1229,5 +1232,73 @@ class XyoClientTest {
             gzipOut.write(tarBaos.toByteArray());
         }
         return gzipBaos.toByteArray();
+    }
+
+    @Test
+    void testApiKeySupplierExceptionWrapped() {
+        java.util.function.Supplier<String> failingSupplier = () -> {
+            throw new RuntimeException("Vault connection timeout");
+        };
+
+        ClientConfig config = new ClientConfig.Builder(failingSupplier)
+                .apiBaseUrl("https://api.xyo.financial")
+                .build();
+
+        XyoException exception = assertThrows(XyoException.class, () -> new XyoClient(config));
+        assertEquals(ErrorCategory.VALIDATION, exception.getCategory());
+        assertTrue(exception.getMessage().contains("Failed to retrieve initial API key from supplier"));
+    }
+
+    @Test
+    void testClientCloseAutoCloseable() {
+        ClientConfig config = new ClientConfig.Builder("test-key")
+                .apiBaseUrl("https://api.xyo.financial")
+                .build();
+
+        assertDoesNotThrow(() -> {
+            try (XyoClient xyoClient = new XyoClient(config)) {
+                assertNotNull(xyoClient);
+            }
+        });
+    }
+
+    @Test
+    void testEnrichmentRequestValidation_Alpha2AndTrimming() {
+        // Valid 2-letter codes and trimming
+        assertDoesNotThrow(() -> new EnrichmentRequest("  Starbucks  ", "  gb  ").validate());
+        assertDoesNotThrow(() -> new EnrichmentRequest("Apple", "US").validate());
+        assertDoesNotThrow(() -> new EnrichmentRequest("Lidl", "DE").validate());
+
+        // Invalid codes: digits, punctuation, 3-letter, 1-letter
+        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "12").validate());
+        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "G1").validate());
+        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "1G").validate());
+        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "GBR").validate());
+        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "G!").validate());
+        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "").validate());
+    }
+
+    @Test
+    void testEnrichmentRequest_ToStringRedacted() {
+        EnrichmentRequest request = new EnrichmentRequest("SECRET_CARD_NARRATIVE_12345", "GB");
+        String str = request.toString();
+        assertFalse(str.contains("SECRET_CARD_NARRATIVE_12345"));
+        assertTrue(str.contains("[REDACTED]"));
+        assertTrue(str.contains("GB"));
+    }
+
+    @Test
+    void testS3HttpsEnforcement() {
+        ClientConfig config = new ClientConfig.Builder("test-key")
+                .apiBaseUrl("https://api.xyo.financial")
+                .allowInsecureHttp(true)
+                .build();
+        XyoClient xyoClient = new XyoClient(config);
+
+        XyoException exception = assertThrows(XyoException.class, () -> {
+            xyoClient.downloadEnrichmentCollection("http://bucket.s3.amazonaws.com/batch.tar.gz");
+        });
+        assertEquals(ErrorCategory.VALIDATION, exception.getCategory());
+        assertTrue(exception.getMessage().contains("External storage downloads (S3) must use HTTPS"));
     }
 }

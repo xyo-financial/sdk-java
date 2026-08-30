@@ -9,7 +9,7 @@ import java.util.Objects;
  * <p>
  * Use the {@link Builder} to construct immutable EnrichmentRequest instances.
  */
-public class EnrichmentRequest {
+public final class EnrichmentRequest {
     private final String content;
     private final String countryCode;
 
@@ -45,8 +45,18 @@ public class EnrichmentRequest {
         return countryCode;
     }
 
+    private static boolean isAlpha2(String s) {
+        if (s == null || s.length() != 2) {
+            return false;
+        }
+        char c1 = s.charAt(0);
+        char c2 = s.charAt(1);
+        return ((c1 >= 'A' && c1 <= 'Z') || (c1 >= 'a' && c1 <= 'z'))
+                && ((c2 >= 'A' && c2 <= 'Z') || (c2 >= 'a' && c2 <= 'z'));
+    }
+
     /**
-     * Validates that request fields are populated and not empty.
+     * Validates that request fields are populated, conform to ISO 3166-1 alpha-2 format, and do not exceed length limits.
      * 
      * @throws XyoException if validation of content or countryCode fails
      */
@@ -54,14 +64,16 @@ public class EnrichmentRequest {
         if (content == null || content.trim().isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "content must not be null or empty");
         }
-        if (content.length() > 128) {
+        String trimmedContent = content.trim();
+        if (trimmedContent.codePointCount(0, trimmedContent.length()) > 128) {
             throw new XyoException(ErrorCategory.VALIDATION, "content must not exceed 128 characters");
         }
         if (countryCode == null || countryCode.trim().isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "countryCode must not be null or empty");
         }
-        if (countryCode.trim().length() != 2) {
-            throw new XyoException(ErrorCategory.VALIDATION, "countryCode must be exactly 2 characters (ISO 3166-1 alpha-2)");
+        String trimmedCountry = countryCode.trim();
+        if (!isAlpha2(trimmedCountry)) {
+            throw new XyoException(ErrorCategory.VALIDATION, "countryCode must be a 2-letter ISO 3166-1 alpha-2 country code");
         }
     }
 
@@ -76,6 +88,11 @@ public class EnrichmentRequest {
     @Override
     public int hashCode() {
         return Objects.hash(content, countryCode);
+    }
+
+    @Override
+    public String toString() {
+        return "EnrichmentRequest{content=[REDACTED], countryCode='" + countryCode + "'}";
     }
 
     /**
