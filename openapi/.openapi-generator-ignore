@@ -21,3 +21,20 @@
 #docs/*.md
 # Then explicitly reverse the ignore rule for a single file:
 #!docs/README.md
+
+# Build configuration: the generator's pom is not the source of truth for ours.
+#
+# openapi/ is a module of the xyo-sdk-parent reactor, but the generator emits a
+# standalone pom with no <parent> block and with <version> set from the
+# specification's info.version. Regenerating therefore severed the module from
+# its parent, losing every inherited plugin, signing and deploy setting, and
+# rewrote the artifact version from the SDK's own release version to the
+# specification's, which are two independently versioned things.
+#
+# A test dispatch of specification v2.0.1 produced exactly that: the <parent>
+# block deleted and <version> changed from 2.1.0 to 2.0.1. The reactor build
+# still passed, so CI would not have stopped it being merged.
+#
+# sdk-dotnet solves the same problem by preserving its .csproj across
+# regeneration; this is the equivalent for Maven.
+pom.xml
