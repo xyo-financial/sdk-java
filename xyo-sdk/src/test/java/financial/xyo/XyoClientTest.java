@@ -13,6 +13,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.LinkedHashMap;
@@ -211,14 +212,12 @@ class XyoClientTest {
     }
 
     @Test
-    @SuppressWarnings("deprecation")
     void testClientConfigValidation() {
         assertThrows(XyoException.class, () -> new XyoClient(null));
-        assertThrows(XyoException.class, () -> new XyoClient(new ClientConfig(null)));
-        assertThrows(XyoException.class, () -> new XyoClient(new ClientConfig("")));
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder((String) null).build());
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder("").build());
 
-        ClientConfig confNoUrl = new ClientConfig("key");
-        confNoUrl.setApiBaseUrl("");
+        ClientConfig confNoUrl = new ClientConfig.Builder("key").apiBaseUrl("").build();
         assertThrows(XyoException.class, () -> new XyoClient(confNoUrl));
     }
 
@@ -244,30 +243,35 @@ class XyoClientTest {
     }
 
     @Test
-    @SuppressWarnings("deprecation")
-    void testClientConfigDoesNotMutate() {
-        ClientConfig mutableConfig = new ClientConfig("key");
-        mutableConfig.setApiBaseUrl("https://api.xyo.financial///");
+    void testClientConfigImmutability() {
+        ClientConfig config = new ClientConfig.Builder("key")
+                .apiBaseUrl("https://api.xyo.financial///")
+                .build();
 
-        new XyoClient(mutableConfig);
+        new XyoClient(config);
 
         // Assert that the original config remains untouched
-        assertEquals("https://api.xyo.financial///", mutableConfig.getApiBaseUrl());
+        assertEquals("https://api.xyo.financial///", config.getApiBaseUrl());
+
+        // Verify toBuilder allows creating modified clone without affecting original
+        ClientConfig copy = config.toBuilder().apiBaseUrl("https://other.xyo.financial").build();
+        assertEquals("https://api.xyo.financial///", config.getApiBaseUrl());
+        assertEquals("https://other.xyo.financial", copy.getApiBaseUrl());
     }
 
     @Test
-    @SuppressWarnings("deprecation")
     void testEnforceSecureHttp() {
-        ClientConfig insecureConf = new ClientConfig("key");
-        insecureConf.setApiBaseUrl("http://api.xyo.financial");
-        insecureConf.setAllowInsecureHttp(false);
+        ClientConfig insecureConf = new ClientConfig.Builder("key")
+                .apiBaseUrl("http://api.xyo.financial")
+                .allowInsecureHttp(false)
+                .build();
 
         XyoException exception = assertThrows(XyoException.class, () -> new XyoClient(insecureConf));
         assertEquals(ErrorCategory.VALIDATION, exception.getCategory());
 
         // Should allow if explicitly configured
-        insecureConf.setAllowInsecureHttp(true);
-        assertDoesNotThrow(() -> new XyoClient(insecureConf));
+        ClientConfig allowedConf = insecureConf.toBuilder().allowInsecureHttp(true).build();
+        assertDoesNotThrow(() -> new XyoClient(allowedConf));
     }
 
     @Test
@@ -659,7 +663,7 @@ class XyoClientTest {
             client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/download/bounded-test");
         });
 
-        assertEquals(ErrorCategory.PARSING, ex.getCategory());
+        assertEquals(ErrorCategory.VALIDATION, ex.getCategory());
         assertTrue(ex.getMessage().contains("Payload exceeded maximum allowed size"));
     }
 
@@ -683,7 +687,8 @@ class XyoClientTest {
         ClientConfig config = new ClientConfig.Builder("test-key")
                 .apiBaseUrl("http://127.0.0.1:" + testServerPort)
                 .allowInsecureHttp(true)
-                .maxResponseBytes(500)
+                .maxResponseBytes(5000)
+                .maxDecompressedBytes(500)
                 .build();
         client = new XyoClient(config);
 
@@ -691,7 +696,7 @@ class XyoClientTest {
             client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/download/zip-bomb");
         });
 
-        assertEquals(ErrorCategory.PARSING, ex.getCategory());
+        assertEquals(ErrorCategory.VALIDATION, ex.getCategory());
         assertTrue(ex.getMessage().contains("Payload exceeded maximum allowed size"));
     }
 
@@ -1229,5 +1234,347 @@ class XyoClientTest {
             gzipOut.write(tarBaos.toByteArray());
         }
         return gzipBaos.toByteArray();
+    }
+
+    @Test
+    void testApiKeySupplierExceptionWrapped() {
+        java.util.function.Supplier<String> failingSupplier = () -> {
+            throw new RuntimeException("Vault connection timeout");
+        };
+
+        ClientConfig config = new ClientConfig.Builder(failingSupplier)
+                .apiBaseUrl("https://api.xyo.financial")
+                .build();
+
+        XyoException exception = assertThrows(XyoException.class, () -> new XyoClient(config));
+        assertEquals(ErrorCategory.VALIDATION, exception.getCategory());
+        assertTrue(exception.getMessage().contains("Failed to retrieve initial API key from supplier"));
+    }
+
+    @Test
+    void testClientCloseAutoCloseable() {
+        ClientConfig config = new ClientConfig.Builder("test-key")
+                .apiBaseUrl("https://api.xyo.financial")
+                .build();
+
+        assertDoesNotThrow(() -> {
+            try (XyoClient xyoClient = new XyoClient(config)) {
+                assertNotNull(xyoClient);
+            }
+        });
+    }
+
+    @Test
+    void testEnrichmentRequestValidation_Alpha2AndTrimming() {
+        // Valid 2-letter codes and automatic trimming / uppercase normalization
+        EnrichmentRequest req1 = new EnrichmentRequest("  Starbucks  ", "  gb  ");
+        assertEquals("Starbucks", req1.getContent());
+        assertEquals("GB", req1.getCountryCode());
+
+        EnrichmentRequest req2 = new EnrichmentRequest("Apple", "US");
+        assertEquals("Apple", req2.getContent());
+        assertEquals("US", req2.getCountryCode());
+
+        EnrichmentRequest req3 = new EnrichmentRequest("Lidl", "de");
+        assertEquals("Lidl", req3.getContent());
+        assertEquals("DE", req3.getCountryCode());
+
+        // Invalid codes: digits, punctuation, 3-letter, 1-letter (fail-fast on creation)
+        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "12"));
+        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "G1"));
+        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "1G"));
+        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "GBR"));
+        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", "G!"));
+        assertThrows(XyoException.class, () -> new EnrichmentRequest("Test", ""));
+    }
+
+    @Test
+    void testToBuilder_AuthModeSwitching() {
+        ClientConfig staticConfig = ClientConfig.builder("static-key").build();
+        assertEquals("static-key", staticConfig.getApiKey());
+        assertNull(staticConfig.getApiKeySupplier());
+
+        // Switch to dynamic supplier via toBuilder()
+        ClientConfig dynamicConfig = staticConfig.toBuilder().apiKeySupplier(() -> "dynamic-key").build();
+        assertNotNull(dynamicConfig.getApiKeySupplier());
+        assertEquals("dynamic-key", dynamicConfig.getApiKey());
+
+        // Switch back to static key via toBuilder()
+        ClientConfig backToStatic = dynamicConfig.toBuilder().apiKey("new-static-key").build();
+        assertNull(backToStatic.getApiKeySupplier());
+        assertEquals("new-static-key", backToStatic.getApiKey());
+    }
+
+    @Test
+    void testStaticBuilderUniformity() {
+        EnrichmentRequest req = EnrichmentRequest.builder().content("Tesco").countryCode("GB").build();
+        assertEquals("Tesco", req.getContent());
+        assertEquals("GB", req.getCountryCode());
+
+        EnrichmentResponse res = EnrichmentResponse.builder().merchant("Tesco Extra").description("Groceries").build();
+        assertEquals("Tesco Extra", res.getMerchant());
+        assertEquals("Groceries", res.getDescription());
+
+        EnrichTransactionCollectionResponse batch = EnrichTransactionCollectionResponse.builder().id("batch-456").link("https://status").build();
+        assertEquals("batch-456", batch.getId());
+        assertEquals("https://status", batch.getLink());
+    }
+
+    @Test
+    void testJsonIgnoreUnknownProperties() throws Exception {
+        com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+
+        String responseJson = "{\"merchant\":\"Costa\",\"description\":\"Coffee\",\"future_metadata\":\"v2_field\"}";
+        EnrichmentResponse res = mapper.readValue(responseJson, EnrichmentResponse.class);
+        assertEquals("Costa", res.getMerchant());
+
+        String batchJson = "{\"id\":\"batch-789\",\"link\":\"https://api/batches/789\",\"extra_routing\":\"aws-eu-west-1\"}";
+        EnrichTransactionCollectionResponse batch = mapper.readValue(batchJson, EnrichTransactionCollectionResponse.class);
+        assertEquals("batch-789", batch.getId());
+    }
+
+    @Test
+    void testClientConfig_EqualsAndHashCode_MultiTenantCredentialSeparation() {
+        ClientConfig configTenantA = new ClientConfig.Builder("key-tenant-A")
+                .apiBaseUrl("https://api.xyo.financial")
+                .connectTimeoutMs(5000)
+                .build();
+
+        ClientConfig configTenantASame = new ClientConfig.Builder("key-tenant-A")
+                .apiBaseUrl("https://api.xyo.financial")
+                .connectTimeoutMs(5000)
+                .build();
+
+        ClientConfig configTenantB = new ClientConfig.Builder("key-tenant-B")
+                .apiBaseUrl("https://api.xyo.financial")
+                .connectTimeoutMs(5000)
+                .build();
+
+        assertEquals(configTenantA, configTenantASame);
+        assertEquals(configTenantA.hashCode(), configTenantASame.hashCode());
+
+        assertNotEquals(configTenantA, configTenantB);
+        assertNotEquals(configTenantA.hashCode(), configTenantB.hashCode());
+    }
+
+    @Test
+    void testApiKey_ControlCharactersRejected() {
+        ClientConfig configWithCrlf = new ClientConfig.Builder("key-with-\r\ninjection").build();
+        XyoException exception = assertThrows(XyoException.class, () -> new XyoClient(configWithCrlf));
+        assertEquals(ErrorCategory.VALIDATION, exception.getCategory());
+        assertTrue(exception.getMessage().contains("control characters"));
+    }
+
+    @Test
+    void testEnrichmentRequest_ToStringRedacted() {
+        EnrichmentRequest request = new EnrichmentRequest("SECRET_CARD_NARRATIVE_12345", "GB");
+        String str = request.toString();
+        assertFalse(str.contains("SECRET_CARD_NARRATIVE_12345"));
+        assertTrue(str.contains("[REDACTED]"));
+        assertTrue(str.contains("GB"));
+    }
+
+    @Test
+    void testS3HttpsEnforcement() {
+        ClientConfig config = new ClientConfig.Builder("test-key")
+                .apiBaseUrl("https://api.xyo.financial")
+                .allowInsecureHttp(true)
+                .build();
+        XyoClient xyoClient = new XyoClient(config);
+
+        XyoException exception = assertThrows(XyoException.class, () -> {
+            xyoClient.downloadEnrichmentCollection("http://bucket.s3.amazonaws.com/batch.tar.gz");
+        });
+        assertEquals(ErrorCategory.VALIDATION, exception.getCategory());
+        assertTrue(exception.getMessage().contains("External storage downloads (S3) must use HTTPS"));
+    }
+
+    @Test
+    void testClientConfig_CustomHttpClientBuilder() {
+        java.net.http.HttpClient.Builder customBuilder = java.net.http.HttpClient.newBuilder()
+                .connectTimeout(Duration.ofSeconds(12));
+
+        ClientConfig config = new ClientConfig.Builder("test-key")
+                .apiBaseUrl("https://api.xyo.financial")
+                .httpClientBuilder(customBuilder)
+                .maxTarEntries(30000)
+                .build();
+
+        assertNotNull(config.getHttpClientBuilder());
+        assertEquals(30000, config.getMaxTarEntries());
+        XyoClient customClient = new XyoClient(config);
+        assertNotNull(customClient);
+    }
+
+    @Test
+    void testClientConfig_DeprecatedHttpClientThrows() {
+        java.net.http.HttpClient dummyClient = java.net.http.HttpClient.newHttpClient();
+        assertThrows(UnsupportedOperationException.class, () -> {
+            new ClientConfig.Builder("test-key").httpClient(dummyClient);
+        });
+    }
+
+    @Test
+    void testToBuilder_AcrossDtoModels() {
+        RequestOptions opts = RequestOptions.builder()
+                .correlationId(java.util.UUID.randomUUID())
+                .traceparent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+                .apiUser("tenant-user-1")
+                .build();
+        RequestOptions optsClone = opts.toBuilder().apiUser("tenant-user-2").build();
+        assertEquals("tenant-user-2", optsClone.getApiUser());
+        assertEquals(opts.getCorrelationId(), optsClone.getCorrelationId());
+
+        EnrichmentRequest req = EnrichmentRequest.builder().content("Uber").countryCode("US").build();
+        EnrichmentRequest reqClone = req.toBuilder().countryCode("GB").build();
+        assertEquals("GB", reqClone.getCountryCode());
+        assertEquals("Uber", reqClone.getContent());
+
+        EnrichmentResponse res = EnrichmentResponse.builder().merchant("Spotify").location("Stockholm").build();
+        EnrichmentResponse resClone = res.toBuilder().location("London").build();
+        assertEquals("Spotify", resClone.getMerchant());
+        assertEquals("London", resClone.getLocation());
+
+        EnrichTransactionCollectionResponse col = EnrichTransactionCollectionResponse.builder().id("id-1").link("link-1").build();
+        EnrichTransactionCollectionResponse colClone = col.toBuilder().link("link-2").build();
+        assertEquals("id-1", colClone.getId());
+        assertEquals("link-2", colClone.getLink());
+    }
+
+    @Test
+    void testClientConfig_Builder_BoundsValidation() {
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder("key").connectTimeoutMs(-1).build());
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder("key").requestTimeoutMs(-1).build());
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder("key").maxResponseBytes(0).build());
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder("key").maxResponseBytes(-100).build());
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder("key").maxDecompressedBytes(0).build());
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder("key").maxDecompressedBytes(-500).build());
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder("key").maxTarEntries(0).build());
+        assertThrows(IllegalArgumentException.class, () -> new ClientConfig.Builder("key").maxTarEntries(-10).build());
+    }
+
+    @Test
+    void testDownloadEnrichmentCollectionStream() throws IOException {
+        String json = "{\n" +
+                "  \"merchant\": \"Deliveroo\",\n" +
+                "  \"description\": \"DELIVEROO UK\",\n" +
+                "  \"categories\": [\"Food\"],\n" +
+                "  \"location\": \"London\"\n" +
+                "}";
+
+        Map<String, String> files = new LinkedHashMap<>();
+        files.put("order.json", json);
+        byte[] archiveBytes = createTarGzArchive(files);
+
+        startTestServer(exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "application/gzip");
+            exchange.sendResponseHeaders(200, archiveBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(archiveBytes);
+            }
+        });
+
+        client = createTestClient();
+        List<EnrichmentResponse> streamedResults = new ArrayList<>();
+        client.downloadEnrichmentCollectionStream(
+                "http://127.0.0.1:" + testServerPort + "/v1/enrich/bulk/download/batch-stream",
+                streamedResults::add
+        );
+
+        assertEquals(1, streamedResults.size());
+        assertEquals("Deliveroo", streamedResults.get(0).getMerchant());
+        assertEquals("London", streamedResults.get(0).getLocation());
+    }
+
+    @Test
+    void testClientConfig_EqualsAndHashCode_HttpClientBuilderDifferent() {
+        java.net.http.HttpClient.Builder builder1 = java.net.http.HttpClient.newBuilder();
+        java.net.http.HttpClient.Builder builder2 = java.net.http.HttpClient.newBuilder();
+
+        ClientConfig config1 = new ClientConfig.Builder("test-key").httpClientBuilder(builder1).build();
+        ClientConfig config1Same = new ClientConfig.Builder("test-key").httpClientBuilder(builder1).build();
+        ClientConfig config2 = new ClientConfig.Builder("test-key").httpClientBuilder(builder2).build();
+
+        assertEquals(config1, config1Same);
+        assertEquals(config1.hashCode(), config1Same.hashCode());
+
+        assertNotEquals(config1, config2);
+        assertNotEquals(config1.hashCode(), config2.hashCode());
+    }
+
+    @Test
+    void testRequestOptions_ConstructionValidation() {
+        // Valid options
+        RequestOptions valid = RequestOptions.builder()
+                .traceparent("00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01")
+                .apiUser("tenant-user-1")
+                .build();
+        assertNotNull(valid);
+
+        // Invalid traceparent
+        assertThrows(XyoException.class, () -> RequestOptions.builder().traceparent("invalid-traceparent").build());
+        assertThrows(XyoException.class, () -> new RequestOptions(null, "invalid-traceparent"));
+
+        // Control characters (CRLF, tab) in apiUser
+        assertThrows(XyoException.class, () -> RequestOptions.builder().apiUser("tenant\nuser").build());
+        assertThrows(XyoException.class, () -> RequestOptions.builder().apiUser("tenant\tuser").build());
+        assertThrows(XyoException.class, () -> new RequestOptions(null, null, "tenant\ruser"));
+    }
+
+    @Test
+    void testApiKey_TabCharacterRejected() {
+        ClientConfig configWithTab = new ClientConfig.Builder("key-with-\t-tab").build();
+        XyoException exception = assertThrows(XyoException.class, () -> new XyoClient(configWithTab));
+        assertEquals(ErrorCategory.VALIDATION, exception.getCategory());
+        assertTrue(exception.getMessage().contains("control characters"));
+    }
+
+    @Test
+    void testDownloadEnrichmentCollection_ExceedsMaxTarEntriesThrowsValidation() throws IOException {
+        String json1 = "{\"merchant\":\"Merchant1\"}";
+        String json2 = "{\"merchant\":\"Merchant2\"}";
+        Map<String, String> files = new LinkedHashMap<>();
+        files.put("1.json", json1);
+        files.put("2.json", json2);
+        byte[] archiveBytes = createTarGzArchive(files);
+
+        startTestServer(exchange -> {
+            exchange.getResponseHeaders().set("Content-Type", "application/gzip");
+            exchange.sendResponseHeaders(200, archiveBytes.length);
+            try (OutputStream os = exchange.getResponseBody()) {
+                os.write(archiveBytes);
+            }
+        });
+
+        ClientConfig config = new ClientConfig.Builder("test-key")
+                .apiBaseUrl("http://127.0.0.1:" + testServerPort)
+                .allowInsecureHttp(true)
+                .maxTarEntries(1) // only permit 1 entry
+                .build();
+        client = new XyoClient(config);
+
+        XyoException ex = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://127.0.0.1:" + testServerPort + "/v1/download/too-many-entries");
+        });
+
+        assertEquals(ErrorCategory.VALIDATION, ex.getCategory());
+        assertTrue(ex.getMessage().contains("Archive contains too many entries"));
+    }
+
+    @Test
+    void testDownloadEnrichmentCollection_DifferentPortRejectedAsNonApiHost() {
+        ClientConfig config = new ClientConfig.Builder("test-key")
+                .apiBaseUrl("http://127.0.0.1:8080")
+                .allowInsecureHttp(true)
+                .build();
+        client = new XyoClient(config);
+
+        // Different port on 127.0.0.1 must be rejected as non-API host and not permitted
+        XyoException ex = assertThrows(XyoException.class, () -> {
+            client.downloadEnrichmentCollection("http://127.0.0.1:9090/v1/download/batch.tar.gz");
+        });
+
+        assertEquals(ErrorCategory.VALIDATION, ex.getCategory());
+        assertTrue(ex.getMessage().contains("Domain '127.0.0.1' is not permitted"));
     }
 }

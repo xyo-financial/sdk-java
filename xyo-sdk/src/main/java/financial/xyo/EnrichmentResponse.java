@@ -1,6 +1,7 @@
 package financial.xyo;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import org.jspecify.annotations.Nullable;
 import java.util.Collections;
@@ -11,7 +12,8 @@ import java.util.Objects;
  * Result returned for a successful transaction enrichment request.
  * Contains identified merchant, description, categories, logo and location details.
  */
-public class EnrichmentResponse {
+@JsonIgnoreProperties(ignoreUnknown = true)
+public final class EnrichmentResponse {
     private final String merchant;
     private final String description;
     private final List<String> categories;
@@ -99,6 +101,30 @@ public class EnrichmentResponse {
         return address;
     }
 
+    /**
+     * Creates a new Builder instance for constructing {@link EnrichmentResponse}.
+     * 
+     * @return a new Builder
+     */
+    public static Builder builder() {
+        return new Builder();
+    }
+
+    /**
+     * Creates a new {@link Builder} initialized with values from this instance.
+     * 
+     * @return a pre-populated Builder
+     */
+    public Builder toBuilder() {
+        return new Builder()
+                .merchant(this.merchant)
+                .description(this.description)
+                .categories(this.categories)
+                .logo(this.logo)
+                .location(this.location)
+                .address(this.address);
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) return true;
@@ -115,6 +141,18 @@ public class EnrichmentResponse {
     @Override
     public int hashCode() {
         return Objects.hash(merchant, description, categories, logo, location, address);
+    }
+
+    @Override
+    public String toString() {
+        return "EnrichmentResponse{" +
+                "merchant='" + merchant + '\'' +
+                ", description='" + description + '\'' +
+                ", categories=" + categories +
+                ", logo='" + logo + '\'' +
+                ", location='" + location + '\'' +
+                ", address='" + address + '\'' +
+                '}';
     }
 
     /**

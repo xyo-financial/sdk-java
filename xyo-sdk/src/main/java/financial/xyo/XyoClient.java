@@ -7,6 +7,7 @@ import financial.xyo.api.EnrichmentApi;
 import financial.xyo.model.EnrichTransactionsRequestInner;
 import org.apache.commons.compress.archivers.tar.TarArchiveEntry;
 import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
+import org.jspecify.annotations.Nullable;
 
 import java.io.FilterInputStream;
 import java.io.IOException;
@@ -24,6 +25,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.zip.GZIPInputStream;
@@ -36,8 +38,18 @@ import java.util.function.Supplier;
  * <p>
  * This client provides support for enriching single transactions, running bulk asynchronous transaction
  * collections, checking collection statuses, and downloading enrichment result archives.
+ * <p>
+ * <b>Note for Java 17 runtimes:</b> {@link java.net.http.HttpClient} does not implement {@link AutoCloseable}
+ * in Java 17 (introduced in Java 21). {@code XyoClient} should be instantiated as a long-lived singleton
+ * service component in your application. Creating short-lived or per-request instances on Java 17 may lead to
+ * thread starvation and connection resource exhaustion.
  */
 public class XyoClient implements AutoCloseable {
+
+    private static final System.Logger LOGGER = System.getLogger(XyoClient.class.getName());
+
+    /** Maximum allowed batch ingestion size for asynchronous collection enrichment (50,000). */
+    public static final int MAX_BATCH_REQUEST_SIZE = 50000;
 
     private static final Pattern TRACEPARENT_PATTERN =
             Pattern.compile("^[0-9a-f]{2}-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$");
@@ -47,16 +59,47 @@ public class XyoClient implements AutoCloseable {
 
     private final Supplier<String> apiKeySupplier;
     private final String apiBaseUrl;
+    private final @Nullable String apiHost;
+    private final int apiPort;
     private final boolean allowInsecureHttp;
     private final long maxResponseBytes;
+    private final long maxDecompressedBytes;
+    private final int maxTarEntries;
     private final HttpClient httpClient;
     private final Duration requestTimeout;
     private final ObjectMapper objectMapper;
     private final EnrichmentApi enrichmentApi;
 
+    private static boolean containsControlCharacters(String s) {
+        if (s == null) return false;
+        int len = s.length();
+        for (int i = 0; i < len; i++) {
+            char c = s.charAt(i);
+            if (c < 0x20 || c == 0x7F) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static void validateTraceparent(String traceparent) {
         if (traceparent != null && !TRACEPARENT_PATTERN.matcher(traceparent).matches()) {
             throw new XyoException(ErrorCategory.VALIDATION, "traceparent must strictly conform to W3C format");
+        }
+    }
+
+    private static void validateApiUser(String apiUser) {
+        if (containsControlCharacters(apiUser)) {
+            throw new XyoException(ErrorCategory.VALIDATION, "apiUser must not contain control characters");
+        }
+    }
+
+    private static void validateApiKey(String key) {
+        if (key == null || key.trim().isEmpty()) {
+            throw new XyoException(ErrorCategory.VALIDATION, "API key must not be null or empty");
+        }
+        if (containsControlCharacters(key)) {
+            throw new XyoException(ErrorCategory.VALIDATION, "API key must not contain control characters");
         }
     }
 
@@ -81,10 +124,13 @@ public class XyoClient implements AutoCloseable {
             throw new XyoException(ErrorCategory.VALIDATION, "api_key must not be empty");
         }
 
-        String initialKey = this.apiKeySupplier.get();
-        if (initialKey == null || initialKey.isEmpty()) {
-            throw new XyoException(ErrorCategory.VALIDATION, "api_key must not be empty");
+        String initialKey;
+        try {
+            initialKey = this.apiKeySupplier.get();
+        } catch (Exception e) {
+            throw new XyoException(ErrorCategory.VALIDATION, "Failed to retrieve initial API key from supplier: " + e.getMessage(), e);
         }
+        validateApiKey(initialKey);
 
         if (config.getApiBaseUrl() == null || config.getApiBaseUrl().isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "api_base_url must not be empty");
@@ -92,6 +138,8 @@ public class XyoClient implements AutoCloseable {
 
         this.allowInsecureHttp = config.isAllowInsecureHttp();
         this.maxResponseBytes = config.getMaxResponseBytes();
+        this.maxDecompressedBytes = config.getMaxDecompressedBytes();
+        this.maxTarEntries = config.getMaxTarEntries();
 
         String baseUrl = config.getApiBaseUrl();
         int end = baseUrl.length();
@@ -100,29 +148,34 @@ public class XyoClient implements AutoCloseable {
         }
         this.apiBaseUrl = baseUrl.substring(0, end);
 
-        // Fail-fast URL parsing check
+        // Fail-fast URL parsing check and host/port caching
         try {
-            URI.create(this.apiBaseUrl);
+            URI parsedBase = URI.create(this.apiBaseUrl);
+            this.apiHost = parsedBase.getHost();
+            this.apiPort = parsedBase.getPort();
         } catch (IllegalArgumentException e) {
             throw new XyoException(ErrorCategory.VALIDATION, "Invalid API base URL: " + this.apiBaseUrl, e);
         }
 
         // Validate insecure connection setting
-        if (!this.allowInsecureHttp && this.apiBaseUrl.toLowerCase().startsWith("http://")) {
+        if (!this.allowInsecureHttp && this.apiBaseUrl.toLowerCase(Locale.ROOT).startsWith("http://")) {
             throw new XyoException(ErrorCategory.VALIDATION, "Insecure HTTP connections are not allowed by default. Set allowInsecureHttp to true in ClientConfig if this is intentional.");
         }
 
         ApiClient apiClient = new ApiClient();
         apiClient.updateBaseUri(this.apiBaseUrl);
 
-        if (config.getHttpClient() != null) {
-            apiClient.setHttpClientBuilder(config.getHttpClient().newBuilder());
-        } else {
-            // Enforce minimum TLS 1.2+ version (PCI-DSS 4.0 §4.2.1 compliance)
-            SSLParameters sslParams = new SSLParameters();
-            sslParams.setProtocols(new String[]{"TLSv1.3", "TLSv1.2"});
-            apiClient.setHttpClientBuilder(HttpClient.newBuilder().sslParameters(sslParams));
+        HttpClient.Builder httpBuilder = config.getHttpClientBuilder();
+        if (httpBuilder == null) {
+            httpBuilder = HttpClient.newBuilder();
         }
+
+        // Enforce institutional TLS 1.2+ protocols across all builder instances (PCI-DSS 4.0 §4.2.1)
+        SSLParameters sslParams = new SSLParameters();
+        sslParams.setProtocols(new String[]{"TLSv1.3", "TLSv1.2"});
+        httpBuilder.sslParameters(sslParams);
+
+        apiClient.setHttpClientBuilder(httpBuilder);
 
         if (config.getConnectTimeoutMs() > 0) {
             apiClient.setConnectTimeout(Duration.ofMillis(config.getConnectTimeoutMs()));
@@ -136,11 +189,14 @@ public class XyoClient implements AutoCloseable {
 
         // Configure dynamic Authorization Bearer token header interceptor (NIST SP 800-57 key rotation support)
         apiClient.setRequestInterceptor(builder -> {
-            String key = this.apiKeySupplier.get();
-            if (key == null || key.isEmpty()) {
-                throw new IllegalStateException("API key supplier returned null; cannot authenticate request");
+            String key;
+            try {
+                key = this.apiKeySupplier.get();
+            } catch (Exception e) {
+                throw new XyoException(ErrorCategory.VALIDATION, "Failed to retrieve API key from supplier: " + e.getMessage(), e);
             }
-            builder.header("Authorization", "Bearer " + key);
+            validateApiKey(key);
+            builder.header("Authorization", "Bearer " + key.trim());
         });
 
         this.httpClient = apiClient.getHttpClient();
@@ -156,7 +212,7 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if input validation fails, parsing errors happen, or API returns a non-2xx response
      */
     public EnrichmentResponse enrichTransaction(EnrichmentRequest request) {
-        return enrichTransaction(request, null, null);
+        return enrichTransaction(request, (RequestOptions) null);
     }
 
     /**
@@ -168,10 +224,9 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if input validation fails, parsing errors happen, or API returns a non-2xx response
      */
     public EnrichmentResponse enrichTransaction(EnrichmentRequest request, RequestOptions options) {
-        if (options == null) {
-            return enrichTransaction(request, null, null);
-        }
-        return enrichTransaction(request, options.getCorrelationId(), options.getTraceparent());
+        UUID correlationId = options != null ? options.getCorrelationId() : null;
+        String traceparent = options != null ? options.getTraceparent() : null;
+        return enrichTransaction(request, correlationId, traceparent);
     }
 
     /**
@@ -222,7 +277,7 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if validation checks fail or the server returns an error response
      */
     public EnrichTransactionCollectionResponse enrichTransactionCollection(List<EnrichmentRequest> requests) {
-        return enrichTransactionCollection(requests, null, null, null);
+        return enrichTransactionCollection(requests, (RequestOptions) null);
     }
 
     /**
@@ -234,7 +289,7 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if validation checks fail or the server returns an error response
      */
     public EnrichTransactionCollectionResponse enrichTransactionCollection(List<EnrichmentRequest> requests, String apiUser) {
-        return enrichTransactionCollection(requests, apiUser, null, null);
+        return enrichTransactionCollection(requests, RequestOptions.builder().apiUser(apiUser).build());
     }
 
     /**
@@ -247,7 +302,7 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if validation checks fail or the server returns an error response
      */
     public EnrichTransactionCollectionResponse enrichTransactionCollection(List<EnrichmentRequest> requests, UUID correlationId, String traceparent) {
-        return enrichTransactionCollection(requests, null, correlationId, traceparent);
+        return enrichTransactionCollection(requests, RequestOptions.builder().correlationId(correlationId).traceparent(traceparent).build());
     }
 
     /**
@@ -259,10 +314,10 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if validation checks fail or the server returns an error response
      */
     public EnrichTransactionCollectionResponse enrichTransactionCollection(List<EnrichmentRequest> requests, RequestOptions options) {
-        if (options == null) {
-            return enrichTransactionCollection(requests, null, null, null);
-        }
-        return enrichTransactionCollection(requests, options.getApiUser(), options.getCorrelationId(), options.getTraceparent());
+        String apiUser = options != null ? options.getApiUser() : null;
+        UUID correlationId = options != null ? options.getCorrelationId() : null;
+        String traceparent = options != null ? options.getTraceparent() : null;
+        return enrichTransactionCollection(requests, apiUser, correlationId, traceparent);
     }
 
     /**
@@ -276,15 +331,13 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if validation checks fail or the server returns an error response
      */
     public EnrichTransactionCollectionResponse enrichTransactionCollection(List<EnrichmentRequest> requests, String apiUser, UUID correlationId, String traceparent) {
-        if (apiUser != null && apiUser.chars().anyMatch(c -> (c < 0x20 && c != '\t') || c == 0x7F)) {
-            throw new XyoException(ErrorCategory.VALIDATION, "apiUser must not contain control characters");
-        }
+        validateApiUser(apiUser);
         validateTraceparent(traceparent);
         if (requests == null || requests.isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "requests list must not be null or empty");
         }
-        if (requests.size() > 50000) {
-            throw new XyoException(ErrorCategory.VALIDATION, "requests list size must not exceed 50,000 items");
+        if (requests.size() > MAX_BATCH_REQUEST_SIZE) {
+            throw new XyoException(ErrorCategory.VALIDATION, String.format("requests list size must not exceed %,d items", MAX_BATCH_REQUEST_SIZE));
         }
         List<EnrichTransactionsRequestInner> apiReqList = new ArrayList<>(requests.size());
         for (EnrichmentRequest request : requests) {
@@ -319,7 +372,7 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if parsing fails, trace status lookup returns bad code, or required elements are missing
      */
     public EnrichmentCollectionStatus enrichTransactionCollectionStatus(String id) {
-        return enrichTransactionCollectionStatus(id, null, null, null);
+        return enrichTransactionCollectionStatus(id, (RequestOptions) null);
     }
 
     /**
@@ -331,7 +384,7 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if parsing fails, trace status lookup returns bad code, or required elements are missing
      */
     public EnrichmentCollectionStatus enrichTransactionCollectionStatus(String id, String apiUser) {
-        return enrichTransactionCollectionStatus(id, apiUser, null, null);
+        return enrichTransactionCollectionStatus(id, RequestOptions.builder().apiUser(apiUser).build());
     }
 
     /**
@@ -344,7 +397,7 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if parsing fails, trace status lookup returns bad code, or required elements are missing
      */
     public EnrichmentCollectionStatus enrichTransactionCollectionStatus(String id, UUID correlationId, String traceparent) {
-        return enrichTransactionCollectionStatus(id, null, correlationId, traceparent);
+        return enrichTransactionCollectionStatus(id, RequestOptions.builder().correlationId(correlationId).traceparent(traceparent).build());
     }
 
     /**
@@ -356,10 +409,10 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if parsing fails, trace status lookup returns bad code, or required elements are missing
      */
     public EnrichmentCollectionStatus enrichTransactionCollectionStatus(String id, RequestOptions options) {
-        if (options == null) {
-            return enrichTransactionCollectionStatus(id, null, null, null);
-        }
-        return enrichTransactionCollectionStatus(id, options.getApiUser(), options.getCorrelationId(), options.getTraceparent());
+        String apiUser = options != null ? options.getApiUser() : null;
+        UUID correlationId = options != null ? options.getCorrelationId() : null;
+        String traceparent = options != null ? options.getTraceparent() : null;
+        return enrichTransactionCollectionStatus(id, apiUser, correlationId, traceparent);
     }
 
     /**
@@ -373,9 +426,7 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if parsing fails, trace status lookup returns bad code, or required elements are missing
      */
     public EnrichmentCollectionStatus enrichTransactionCollectionStatus(String id, String apiUser, UUID correlationId, String traceparent) {
-        if (apiUser != null && apiUser.chars().anyMatch(c -> (c < 0x20 && c != '\t') || c == 0x7F)) {
-            throw new XyoException(ErrorCategory.VALIDATION, "apiUser must not contain control characters");
-        }
+        validateApiUser(apiUser);
         validateTraceparent(traceparent);
         if (id == null || id.isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "id must not be null or empty");
@@ -407,7 +458,7 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if validation checks fail, the HTTP download fails, decompression fails, or parsing fails
      */
     public List<EnrichmentResponse> downloadEnrichmentCollection(String downloadUrl) throws XyoException {
-        return downloadEnrichmentCollection(downloadUrl, null, null);
+        return downloadEnrichmentCollection(downloadUrl, (RequestOptions) null);
     }
 
     /**
@@ -419,10 +470,9 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if validation checks fail, the HTTP download fails, decompression fails, or parsing fails
      */
     public List<EnrichmentResponse> downloadEnrichmentCollection(String downloadUrl, RequestOptions options) throws XyoException {
-        if (options == null) {
-            return downloadEnrichmentCollection(downloadUrl, null, null);
-        }
-        return downloadEnrichmentCollection(downloadUrl, options.getCorrelationId(), options.getTraceparent());
+        UUID correlationId = options != null ? options.getCorrelationId() : null;
+        String traceparent = options != null ? options.getTraceparent() : null;
+        return downloadEnrichmentCollection(downloadUrl, correlationId, traceparent);
     }
 
     /**
@@ -435,8 +485,58 @@ public class XyoClient implements AutoCloseable {
      * @throws XyoException if validation checks fail, the HTTP download fails, decompression fails, or parsing fails
      */
     public List<EnrichmentResponse> downloadEnrichmentCollection(String downloadUrl, UUID correlationId, String traceparent) throws XyoException {
+        List<EnrichmentResponse> results = new ArrayList<>();
+        downloadEnrichmentCollectionStream(downloadUrl, correlationId, traceparent, results::add);
+        return results;
+    }
+
+    /**
+     * Streams unpacked enrichment results iteratively to a consumer without accumulating the entire batch in memory.
+     *
+     * @param downloadUrl the download link URL returned in the bulk collection response
+     * @param consumer consumer callback receiving each parsed {@link EnrichmentResponse}
+     * @throws XyoException if download or unpacking fails
+     */
+    public void downloadEnrichmentCollectionStream(String downloadUrl, java.util.function.Consumer<EnrichmentResponse> consumer) throws XyoException {
+        downloadEnrichmentCollectionStream(downloadUrl, (RequestOptions) null, consumer);
+    }
+
+    /**
+     * Streams unpacked enrichment results iteratively to a consumer without accumulating the entire batch in memory.
+     *
+     * @param downloadUrl the download link URL returned in the bulk collection response
+     * @param options per-request options containing correlation ID, traceparent, etc.
+     * @param consumer consumer callback receiving each parsed {@link EnrichmentResponse}
+     * @throws XyoException if download or unpacking fails
+     */
+    public void downloadEnrichmentCollectionStream(
+            String downloadUrl,
+            @Nullable RequestOptions options,
+            java.util.function.Consumer<EnrichmentResponse> consumer) throws XyoException {
+        UUID correlationId = options != null ? options.getCorrelationId() : null;
+        String traceparent = options != null ? options.getTraceparent() : null;
+        downloadEnrichmentCollectionStream(downloadUrl, correlationId, traceparent, consumer);
+    }
+
+    /**
+     * Streams unpacked enrichment results iteratively to a consumer without accumulating the entire batch in memory.
+     *
+     * @param downloadUrl the download link URL returned in the bulk collection response
+     * @param correlationId optional correlation UUID for distributed tracing
+     * @param traceparent optional W3C traceparent header string for APM tracing
+     * @param consumer consumer callback receiving each parsed {@link EnrichmentResponse}
+     * @throws XyoException if validation checks fail, the HTTP download fails, decompression fails, or parsing fails
+     */
+    public void downloadEnrichmentCollectionStream(
+            String downloadUrl,
+            @Nullable UUID correlationId,
+            @Nullable String traceparent,
+            java.util.function.Consumer<EnrichmentResponse> consumer) throws XyoException {
         if (downloadUrl == null || downloadUrl.trim().isEmpty()) {
             throw new XyoException(ErrorCategory.VALIDATION, "downloadUrl must not be null or empty");
+        }
+        if (consumer == null) {
+            throw new XyoException(ErrorCategory.VALIDATION, "consumer must not be null");
         }
         validateTraceparent(traceparent);
 
@@ -465,6 +565,21 @@ public class XyoClient implements AutoCloseable {
             throw new XyoException(ErrorCategory.VALIDATION, "Insecure HTTP connections are not allowed by default. Set allowInsecureHttp to true in ClientConfig if this is intentional.");
         }
 
+        int targetPort = uri.getPort();
+        boolean isSamePort = (this.apiPort == targetPort) ||
+                (this.apiPort == -1 && ("https".equalsIgnoreCase(scheme) ? (targetPort == -1 || targetPort == 443) : (targetPort == -1 || targetPort == 80))) ||
+                (targetPort == -1 && ("https".equalsIgnoreCase(scheme) ? (this.apiPort == 443) : (this.apiPort == 80)));
+        boolean isApiHost = (this.apiHost != null && this.apiHost.equalsIgnoreCase(uri.getHost()) && isSamePort);
+        boolean isS3 = (uri.getHost() != null && ALLOWED_S3_PATTERN.matcher(uri.getHost().toLowerCase(Locale.ROOT)).matches());
+
+        if (!isApiHost && !isS3) {
+            throw new XyoException(ErrorCategory.VALIDATION, "Domain '" + uri.getHost() + "' is not permitted for secure archive downloads");
+        }
+
+        if (isS3 && !"https".equalsIgnoreCase(scheme)) {
+            throw new XyoException(ErrorCategory.VALIDATION, "External storage downloads (S3) must use HTTPS");
+        }
+
         HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                 .uri(uri)
                 .GET()
@@ -477,19 +592,17 @@ public class XyoClient implements AutoCloseable {
             requestBuilder.header("traceparent", traceparent);
         }
 
-        URI baseUri = URI.create(this.apiBaseUrl);
-        boolean isApiHost = (baseUri.getHost() != null && baseUri.getHost().equalsIgnoreCase(uri.getHost()));
-        boolean isS3 = (uri.getHost() != null && ALLOWED_S3_PATTERN.matcher(uri.getHost().toLowerCase()).matches());
-
-        if (!isApiHost && !isS3) {
-            throw new XyoException(ErrorCategory.VALIDATION, "Domain '" + uri.getHost() + "' is not permitted for secure archive downloads");
+        String currentKey;
+        try {
+            currentKey = this.apiKeySupplier.get();
+        } catch (Exception e) {
+            throw new XyoException(ErrorCategory.VALIDATION, "Failed to retrieve API key from supplier: " + e.getMessage(), e);
         }
-
-        String currentKey = this.apiKeySupplier.get();
         if (currentKey != null && !currentKey.isEmpty()) {
+            validateApiKey(currentKey);
             // Only attach Authorization header if target host matches configured API base URL host (prevents token leakage)
             if (isApiHost) {
-                requestBuilder.header("Authorization", "Bearer " + currentKey);
+                requestBuilder.header("Authorization", "Bearer " + currentKey.trim());
             }
         }
 
@@ -506,7 +619,7 @@ public class XyoClient implements AutoCloseable {
         } catch (IOException e) {
             throw new XyoException(ErrorCategory.TRANSPORT, "HTTP download request failed: " + e.getMessage(), e);
         } catch (Exception e) {
-            throw new XyoException(ErrorCategory.TRANSPORT, "Unexpected error during download request: " + e.getMessage(), e);
+            throw wrapUnexpected(e);
         }
 
         int statusCode = response.statusCode();
@@ -522,25 +635,24 @@ public class XyoClient implements AutoCloseable {
             throw createHttpException(statusCode, errorBody, response.headers(), null);
         }
 
-        // Validate Content-Type header to diagnose intermediate proxy/WAF challenge pages
-        String contentType = response.headers().firstValue("Content-Type").orElse("");
-        if (!contentType.isEmpty()) {
-            String ct = contentType.toLowerCase();
-            if (!ct.contains("gzip") && !ct.contains("tar") && !ct.contains("octet-stream") && !ct.contains("binary")) {
-                throw new XyoException(
-                        ErrorCategory.HTTP,
-                        "Unexpected Content-Type '" + contentType + "' received when expecting binary archive",
-                        statusCode,
-                        0,
-                        ""
-                );
-            }
-        }
-
-        List<EnrichmentResponse> results = new ArrayList<>();
         try (InputStream responseStream = response.body()) {
             if (responseStream == null) {
                 throw new XyoException(ErrorCategory.PARSING, "Response body is null");
+            }
+
+            // Validate Content-Type while stream is safely managed inside try-with-resources
+            String contentType = response.headers().firstValue("Content-Type").orElse("");
+            if (!contentType.isEmpty()) {
+                String ct = contentType.toLowerCase(Locale.ROOT);
+                if (!ct.contains("gzip") && !ct.contains("tar") && !ct.contains("octet-stream") && !ct.contains("binary")) {
+                    throw new XyoException(
+                            ErrorCategory.HTTP,
+                            "Unexpected Content-Type '" + contentType + "' received when expecting binary archive",
+                            statusCode,
+                            0,
+                            ""
+                    );
+                }
             }
 
             InputStream boundedRawStream = (this.maxResponseBytes > 0)
@@ -548,8 +660,8 @@ public class XyoClient implements AutoCloseable {
                     : responseStream;
 
             try (GZIPInputStream gzipIn = new GZIPInputStream(boundedRawStream)) {
-                InputStream boundedDecompressedStream = (this.maxResponseBytes > 0)
-                        ? new BoundedInputStream(gzipIn, this.maxResponseBytes, "decompressed archive stream")
+                InputStream boundedDecompressedStream = (this.maxDecompressedBytes > 0)
+                        ? new BoundedInputStream(gzipIn, this.maxDecompressedBytes, "decompressed archive stream")
                         : gzipIn;
 
                 try (TarArchiveInputStream tarIn = new TarArchiveInputStream(boundedDecompressedStream)) {
@@ -557,8 +669,8 @@ public class XyoClient implements AutoCloseable {
                     int entryCount = 0;
                     while ((entry = tarIn.getNextTarEntry()) != null) {
                         entryCount++;
-                        if (entryCount > ClientConfig.DEFAULT_MAX_TAR_ENTRIES) {
-                            throw new PayloadTooLargeException("Archive contains too many entries (exceeded maximum limit of " + ClientConfig.DEFAULT_MAX_TAR_ENTRIES + " entries)");
+                        if (this.maxTarEntries > 0 && entryCount > this.maxTarEntries) {
+                            throw new PayloadTooLargeException("Archive contains too many entries (exceeded maximum limit of " + this.maxTarEntries + " entries)");
                         }
                         if (entry.isDirectory()) {
                             continue;
@@ -575,7 +687,7 @@ public class XyoClient implements AutoCloseable {
                                         EnrichmentResponse.class
                                 );
                                 if (enrichmentResponse != null) {
-                                    results.add(enrichmentResponse);
+                                    consumer.accept(enrichmentResponse);
                                 }
                             } catch (Exception e) {
                                 throw new XyoException(ErrorCategory.PARSING, "Failed to parse JSON entry '" + sanitizeEntryName(entryName) + "': " + e.getMessage(), e);
@@ -585,12 +697,10 @@ public class XyoClient implements AutoCloseable {
                 }
             }
         } catch (PayloadTooLargeException e) {
-            throw new XyoException(ErrorCategory.PARSING, e.getMessage(), e);
+            throw new XyoException(ErrorCategory.VALIDATION, e.getMessage(), e);
         } catch (IOException e) {
             throw new XyoException(ErrorCategory.PARSING, "Failed to decompress gzip response: " + e.getMessage(), e);
         }
-
-        return results;
     }
 
     private static class PayloadTooLargeException extends IOException {
@@ -628,6 +738,15 @@ public class XyoClient implements AutoCloseable {
             return count;
         }
 
+        @Override
+        public long skip(long n) throws IOException {
+            long skipped = super.skip(n);
+            if (skipped > 0) {
+                checkCount(skipped);
+            }
+            return skipped;
+        }
+
         private void checkCount(long count) throws IOException {
             bytesRead += count;
             if (maxBytes > 0 && bytesRead > maxBytes) {
@@ -656,10 +775,20 @@ public class XyoClient implements AutoCloseable {
 
     /**
      * Closes this client and releases any underlying resources.
+     * <p>
+     * Note for Java 17 runtimes: {@link java.net.http.HttpClient} does not implement {@link AutoCloseable}
+     * in Java 17 (introduced in Java 21). {@code XyoClient} should be instantiated as a long-lived singleton
+     * service component. Creating short-lived instances in Java 17 may lead to thread starvation.
      */
     @Override
     public void close() {
-        // No-op for default HttpClient; enables try-with-resources and lifecycle management in enterprise containers
+        if (this.httpClient instanceof AutoCloseable) {
+            try {
+                ((AutoCloseable) this.httpClient).close();
+            } catch (Exception e) {
+                LOGGER.log(System.Logger.Level.WARNING, "Failed to cleanly close underlying HTTP client", e);
+            }
+        }
     }
 
     private XyoException createHttpException(int statusCode, String errorBody, HttpHeaders headers, Throwable cause) {
