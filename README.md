@@ -9,7 +9,7 @@
 <p align="center">
   <a href="https://github.com/xyo-financial/sdk-java/actions/workflows/ci.yml"><img src="https://github.com/xyo-financial/sdk-java/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI Build" /></a>
   <a href="https://github.com/xyo-financial/sdk-java/actions/workflows/release.yml"><img src="https://github.com/xyo-financial/sdk-java/actions/workflows/release.yml/badge.svg" alt="Release Pipeline" /></a>
-  <img src="https://img.shields.io/badge/Java-17%2B-blue" alt="Java 17+" />
+  <a href="https://docs.oracle.com/en/java/javase/17/"><img src="https://img.shields.io/badge/Java-17%2B-blue" alt="Java 17+" /></a>
   <a href="https://central.sonatype.com/artifact/io.github.xyo-financial/xyo-sdk"><img src="https://img.shields.io/badge/Maven_Central-io.github.xyo--financial%3Axyo--sdk-informational" alt="Maven Central" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache_2.0-blue.svg" alt="License" /></a>
 </p>
