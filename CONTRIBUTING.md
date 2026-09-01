@@ -1,10 +1,30 @@
-# Contributing to the XYO Financial Java SDK
+# 🤝 Contributing to the XYO Financial Java SDK
 
 Thank you for your interest in contributing to the **XYO Financial SDK for Java** (`io.github.xyo-financial:xyo-sdk`).
 
 This SDK is engineered to provide institutional-grade reliability, thread-safety, and developer ergonomics for integrating XYO's transaction enrichment services into enterprise Java ecosystems. To maintain the highest standards of stability, performance, and security across Tier-1 financial institutions, all contributions must adhere to the architectural guidelines, contribution workflows, and quality gates detailed below.
 
 ---
+
+## 📑 Table of Contents
+- [🏗 Two-Layer Architecture](#two-layer-architecture)
+  - [🔹 1. Low-Level Generated Layer (`openapi/`)](#1-low-level-generated-layer-openapi)
+  - [🔹 2. High-Level Wrapper Layer (`xyo-sdk/`)](#2-high-level-wrapper-layer-xyo-sdk)
+- [🔀 Contribution Workflow](#contribution-workflow)
+  - [🔹 Track A: API & Data Model Changes](#track-a-api-data-model-changes)
+  - [🧪 Track B: SDK Ergonomics, Helpers, Tests & Bug Fixes](#track-b-sdk-ergonomics-helpers-tests-bug-fixes)
+- [⚙️ Code Generation](#code-generation)
+  - [⚙️ Automated Cross-Repository Synchronization](#automated-cross-repository-synchronization)
+  - [⚙️ Manual / Local Code Generation](#manual-local-code-generation)
+  - [📋 Generated Code Policy](#generated-code-policy)
+- [🛡️ Quality Gates & Verification Standards](#quality-gates-verification-standards)
+  - [🔹 1. Install Generated Client to Local Maven Cache](#1-install-generated-client-to-local-maven-cache)
+  - [🧪 2. Multi-Module Compilation & Test Execution](#2-multi-module-compilation-test-execution)
+  - [🔹 3. Example Application Verification](#3-example-application-verification)
+  - [🔹 4. Java 17+ Idiomatic Standards](#4-java-17-idiomatic-standards)
+- [🚀 Pull Request Checklist](#pull-request-checklist)
+- [🔒 Security Vulnerabilities](#security-vulnerabilities)
+- [📄 License](#license)
 
 ## 🏗 Two-Layer Architecture
 
@@ -35,7 +55,7 @@ The Java SDK codebase is partitioned into two distinct, decoupled layers:
 └──────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### 1. Low-Level Generated Layer (`openapi/`)
+### 🔹 1. Low-Level Generated Layer (`openapi/`)
 
 * **Location:** [`openapi/`](openapi)
 * **Packages:** `financial.xyo.client`, `financial.xyo.api`, `financial.xyo.model`
@@ -43,7 +63,7 @@ The Java SDK codebase is partitioned into two distinct, decoupled layers:
 * **Lifecycle:** **Read-Only / Auto-Generated**.
 * **Policy:** **DO NOT EDIT MANUALLY**. All source files inside this directory are auto-generated from the canonical OpenAPI specification maintained in the [`xyo-financial/specs`](https://github.com/xyo-financial/specs) repository. Any manual modifications committed directly to `openapi/` will be overwritten without warning during automated regeneration pipelines.
 
-### 2. High-Level Wrapper Layer (`xyo-sdk/`)
+### 🔹 2. High-Level Wrapper Layer (`xyo-sdk/`)
 
 * **Location:** [`xyo-sdk/`](xyo-sdk)
 * **Primary Entrypoint:** [`financial.xyo.XyoClient`](xyo-sdk/src/main/java/com/xyo/financial/XyoClient.java)
@@ -88,13 +108,13 @@ Contributions follow one of two tracks depending on the layer affected:
   Auto-Regenerates openapi/
 ```
 
-### Track A: API & Data Model Changes
+### 🔹 Track A: API & Data Model Changes
 If you need to add an endpoint, modify request/response schemas, update field constraints, or adjust HTTP headers:
 1. **Do not modify this repository directly.**
 2. Propose your changes in the canonical specification repository: [https://github.com/xyo-financial/specs](https://github.com/xyo-financial/specs).
 3. Once specification changes are merged and tagged in `specs`, the automated cross-repository generation workflow triggers via `repository_dispatch` to regenerate `openapi/`.
 
-### Track B: SDK Ergonomics, Helpers, Tests & Bug Fixes
+### 🧪 Track B: SDK Ergonomics, Helpers, Tests & Bug Fixes
 If you are improving client ergonomics, adding utility helpers, optimizing performance, improving documentation, or adding unit tests:
 1. Fork and create a branch from `main` (or `release-v2`).
 2. Implement your changes within the [`xyo-sdk/`](xyo-sdk) module.
@@ -106,7 +126,7 @@ If you are improving client ergonomics, adding utility helpers, optimizing perfo
 
 ## ⚙️ Code Generation
 
-### Automated Cross-Repository Synchronization
+### ⚙️ Automated Cross-Repository Synchronization
 When a new release tag is pushed to [`xyo-financial/specs`](https://github.com/xyo-financial/specs), a GitHub Actions workflow dispatches a `repository_dispatch` event (`spec_tagged`, `spec_updated`) to this repository. The [`.github/workflows/generate.yml`](.github/workflows/generate.yml) workflow:
 1. Checks out `xyo-financial/specs` at the tagged release (`${{ github.event.client_payload.tag || inputs.spec_tag || 'main' }}`).
 2. Runs `@openapitools/openapi-generator-cli` to regenerate `openapi/`.
@@ -114,7 +134,7 @@ When a new release tag is pushed to [`xyo-financial/specs`](https://github.com/x
 4. Installs the generated client to the local Maven cache and runs tests on `xyo-sdk`.
 5. Commits the updated generated client automatically.
 
-### Manual / Local Code Generation
+### ⚙️ Manual / Local Code Generation
 If you need to regenerate the low-level `openapi/` layer locally:
 
 #### Prerequisites
@@ -170,7 +190,7 @@ rm -rf openapi/.github \
 
 ---
 
-### Generated Code Policy
+### 📋 Generated Code Policy
 
 > [!IMPORTANT]
 > `openapi/src/` is produced by OpenAPI Generator and is committed **exactly as the generator emits it**.
@@ -192,32 +212,32 @@ If generated output is wrong, fix it at source, never in the output:
 
 All Pull Requests must pass institutional quality gates before approval and merge:
 
-### 1. Install Generated Client to Local Maven Cache
+### 🔹 1. Install Generated Client to Local Maven Cache
 ```bash
 mvn clean install -q -DskipTests --file openapi/pom.xml
 ```
 
-### 2. Multi-Module Compilation & Test Execution
+### 🧪 2. Multi-Module Compilation & Test Execution
 Compile the wrapper SDK and execute the entire test suite:
 ```bash
-# Compile wrapper layer
+# 🤝 Compile wrapper layer
 mvn clean compile -q --file xyo-sdk/pom.xml
 
-# Run all unit and boundary tests
+# 🤝 Run all unit and boundary tests
 mvn test -B --file xyo-sdk/pom.xml
 ```
 
-### 3. Example Application Verification
+### 🔹 3. Example Application Verification
 The standalone example application in [`example/`](example) must build and run cleanly against the compiled SDK:
 ```bash
-# Package example
+# 🤝 Package example
 mvn clean package --file example/pom.xml
 
-# Run example application
+# 🤝 Run example application
 mvn exec:java -Dexec.mainClass="financial.xyo.example.Main" --file example/pom.xml
 ```
 
-### 4. Java 17+ Idiomatic Standards
+### 🔹 4. Java 17+ Idiomatic Standards
 * **Immutability by Default:** All configuration classes and request/response models must remain immutable once constructed. Use defensive copying for collections and builders.
 * **Modern Networking:** Use standard Java `java.net.http.HttpClient`. Do not introduce legacy external HTTP clients (e.g., Apache HttpClient, Retrofit, OkHttp).
 * **Nullability & Validation:** Implement fail-fast validation in constructors and builders. Annotate nullable parameters explicitly with JSpecify annotations where applicable.
